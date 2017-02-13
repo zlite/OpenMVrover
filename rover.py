@@ -31,7 +31,7 @@ while(True):
             slope = (l[3]-l[1])/(l[2]-l[0])
 #            print ('slope')
 #            print (slope)
-            if ((slope > 0.5) or (slope < -0.5)): # only look at lines that are close to vertical
+            if not (-0.5 <= slope <= 0.5): # ignore lines that are mostly horizontal (slope between -0.5 and 0.5)
                 totalslope = totalslope + slope
                 counter = counter + 1
         if counter != 0:
