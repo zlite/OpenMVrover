@@ -24,24 +24,18 @@ while(True):
     totalslope = 0
     for l in lines:
         img.draw_line(l, color=(127)) # Draw lines
-#        print (l)
     if lines:
         if (l[2]-l[0]) != 0: # don't allow vertical lines (infinite slope)
             slope = 0
             slope = (l[3]-l[1])/(l[2]-l[0])
 #            print ('slope')
 #            print (slope)
-            if not (-0.5 <= slope <= 0.5): # ignore lines that are mostly horizontal (slope between -0.5 and 0.5)
+            if slope <= -0.5 or slope >= 0.5: # ignore lines that are mostly horizontal (slope between -0.5 and 0.5)
                 totalslope = totalslope + slope
                 counter = counter + 1
         if counter != 0:
-            final_slope = totalslope/counter
-            print (final_slope)
+            steer_angle = 1/(totalslope/counter) # 1/(average slope), to compensate for the inverse slope curve
+            print (steer_angle)
             s1.pulse_width(cruise_speed) # move forward at cruise speed
-            if final_slope <= 0:
-                s2.pulse_width(1500 + int(final_slope*steering_gain)) # steer right
-                pyb.delay(10)
-            else:
-                s2.pulse_width(1500 - int(final_slope*steering_gain)) # steer left
-                pyb.delay(10)
-
+            s2.pulse_width(1500 + int(steer_angle*steering_gain)) # steer
+            pyb.delay(10)
