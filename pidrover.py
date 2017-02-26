@@ -48,7 +48,7 @@ def constrain(value, min, max):
 
 def steer(angle):
     global steering_gain
-    s2.pulse_width(1500 - int(angle*steering_gain)) # steer
+    s1.angle(angle) # steer
     pyb.delay(10)
 
 def update_pid():
@@ -68,8 +68,6 @@ def update_pid():
     output = p_term + i_term + d_term
     output = constrain(output, -50, 50)
     return output
-
-
 
 sensor.reset() # Initialize the camera sensor.
 sensor.set_pixformat(sensor.GRAYSCALE) # or sensor.RGB565
