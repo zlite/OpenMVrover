@@ -82,15 +82,14 @@ while(True):
 #    pyb.delay(10)
     clock.tick() # Track elapsed milliseconds between snapshots().
     img = sensor.snapshot() # Take a picture and return the image.
-    img.find_edges(image.EDGE_CANNY, threshold=(40, 174))  # Find edges
-    lines = img.find_lines(threshold=40) # Find lines.
+    img.find_edges(image.EDGE_CANNY, threshold=(60, 150))  # Find edges
+    lines = img.find_lines(threshold=35) # Find lines.
     counter = 0
     totalangle = 0
     for l in lines:
         img.draw_line(l, color=(127)) # Draw lines
     if lines:
         if (l[2]-l[0]) != 0: # don't allow vertical lines (undefined arctan)
-            angle = 0
             angle = -math.atan2(-(l[3]-l[1]),(l[2]-l[0])) # arctan (deltaY/deltaX); we use atan2 so we can tell what quadrant it's in
             angle = math.degrees(angle) # convert from radians to degrees
         if angle < 140 and angle > 40: # ignore lines that are mostly horizontal
@@ -98,7 +97,7 @@ while(True):
                 counter = counter + 1
         if counter != 0:
             now = pyb.millis()
-            if  now > old_time + 1.0 :
+            if  now > old_time + 1.0 :  # time has passed since last measurement
                 measured_angle = totalangle/counter  # average of angles
                 steer_angle = update_pid()
                 old_time = now
