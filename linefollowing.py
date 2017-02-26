@@ -1,4 +1,4 @@
-# Black Grayscale Line Following Example
+# Black Grayscale Line Following Example, updated for PID
 #
 # Making a line following robot requires a lot of effort. This example script
 # shows how to do the machine vision part of the line following robot. You
@@ -14,14 +14,17 @@ import sensor, image, pyb, math, time
 from pyb import Servo
 from pyb import LED
 
+# Tracks a black line. Use [(128, 255)] for a tracking a white line.
+GRAYSCALE_THRESHOLD = [(0, 138)]
+
 s1 = Servo(1) # P7 Motor
 s2 = Servo(2) # P8 Steering
 print (s1.calibration()) # show throttle servo calibration
 cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
 steering_gain = 500
-kp = 0.8   # P term of the PID
-ki = 0     # I term of the PID
-kd = 0     # D term of the PID
+kp = 0.6   # P term of the PID
+ki = 0.1     # I term of the PID
+kd = 0.1     # D term of the PID
 
 red_led   = LED(1)
 green_led = LED(2)
@@ -78,8 +81,7 @@ def update_pid():
     return output
 
 
-# Tracks a black line. Use [(128, 255)] for a tracking a white line.
-GRAYSCALE_THRESHOLD = [(0, 124)]
+
 
 # Each roi is (x, y, w, h). The line detection algorithm will try to find the
 # centroid of the largest blob in each roi. The x position of the centroids
@@ -155,4 +157,3 @@ while(True):
         old_time = now
         steer (steer_angle)
         print(str(measured_angle) + ', ' + str(set_angle) + ', ' + str(steer_angle))
-
