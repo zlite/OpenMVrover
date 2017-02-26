@@ -93,7 +93,7 @@ while(True):
             angle = 0
             angle = -math.atan2(-(l[3]-l[1]),(l[2]-l[0])) # arctan (deltaY/deltaX); we use atan2 so we can tell what quadrant it's in
             angle = math.degrees(angle) # convert from radians to degrees
-        if angle > 10 or angle < -10: # ignore lines that are mostly horizontal (angles smaller than +-10 degrees)
+        if angle < 140 and angle > 40: # ignore lines that are mostly horizontal
                 totalangle = totalangle + angle  # add up all the line angles so we can average them
                 counter = counter + 1
         if counter != 0:
