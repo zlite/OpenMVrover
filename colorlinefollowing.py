@@ -33,9 +33,9 @@ s2 = Servo(2) # P8 Steering
 print (s1.calibration()) # show throttle servo calibration
 cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
 steering_gain = 500
-kp = 0.6   # P term of the PID
-ki = 0.1     # I term of the PID
-kd = 0.1     # D term of the PID
+kp = 0.4   # P term of the PID
+ki = 0.2     # I term of the PID
+kd = 0.3     # D term of the PID
 
 red_led   = LED(1)
 green_led = LED(2)
@@ -92,8 +92,6 @@ def update_pid():
     return output
 
 
-
-
 # Each roi is (x, y, w, h). The line detection algorithm will try to find the
 # centroid of the largest blob in each roi. The x position of the centroids
 # will then be averaged with different weights where the most weight is assigned
@@ -103,7 +101,6 @@ ROIS = [ # [ROI, weight]
         (0, 050, 160, 20, 0.3), # depending on how your robot is setup.
         (0, 000, 160, 20, 0.1)
        ]
-
 
 # Compute the weight divisor (we're computing this so you don't have to make weights add to 1).
 weight_sum = 0
