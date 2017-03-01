@@ -24,7 +24,7 @@ threshold_index = 2 # 0 for red, 1 for green, 2 for blue
 
 thresholds = [(30, 100, 15, 127, 15, 127), # generic_red_thresholds
               (30, 100, -64, -8, -32, 32), # generic_green_thresholds
-              (58, 100, -44, 19, -69, -14)] # generic_blue_thresholds
+              (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
 # You may pass up to 16 thresholds above. However, it's not really possible to segment any
 # scene with 16 thresholds before color thresholds start to overlap heavily.
 
@@ -107,13 +107,17 @@ weight_sum = 0
 for r in ROIS: weight_sum += r[4] # r[4] is the roi weight.
 
 # Camera setup...
+clock = time.clock() # Tracks FPS.
 sensor.reset() # Initialize the camera sensor.
 sensor.set_pixformat(sensor.RGB565)
 sensor.set_framesize(sensor.QQVGA) # use QQVGA for speed.
-sensor.skip_frames(30) # Let new settings take affect.
-sensor.set_auto_gain(True) # must be turned off for color tracking
-sensor.set_auto_whitebal(False) # must be turned off for color tracking
-clock = time.clock() # Tracks FPS.
+sensor.set_auto_gain(True)    # do some calibration at the start
+sensor.set_auto_whitebal(True)
+sensor.skip_frames(60) # Let new settings take effect.
+sensor.set_auto_gain(False)   # now turn off autocalibration before we start color tracking
+sensor.set_auto_whitebal(False)
+
+
 
 while(True):
     clock.tick() # Track elapsed milliseconds between snapshots().
