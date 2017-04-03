@@ -1,10 +1,5 @@
 # Black Grayscale Line Following Example, updated for PID
-#
-# Making a line following robot requires a lot of effort. This example script
-# shows how to do the machine vision part of the line following robot. You
-# can use the output from this script to drive a differential drive robot to
-# follow a line. This script just generates a single turn value that tells
-# your robot to go left or right.
+
 #
 # For this script to work properly you should point the camera at a line at a
 # 45 or so degree angle. Please make sure that only the line is within the
@@ -89,7 +84,7 @@ def update_pid():
 # will then be averaged with different weights where the most weight is assigned
 # to the roi near the bottom of the image and less to the next roi and so on.
 ROIS = [ # [ROI, weight]
-        (0, 100, 160, 20, 0.1), # You'll need to tweak the weights for you app
+        (0, 100, 160, 20, 0.1), # You'll need to tweak the weights for your app
         (0, 050, 160, 20, 0.3), # depending on how your robot is setup.
         (0, 000, 160, 20, 0.7)
        ]
