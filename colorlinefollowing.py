@@ -1,10 +1,5 @@
 # Color Line Following Example with PID Steering
-#
-# Making a line following robot requires a lot of effort. This example script
-# shows how to do the machine vision part of the line following robot. You
-# can use the output from this script to drive a differential drive robot to
-# follow a line. This script just generates a single turn value that tells
-# your robot to go left or right.
+
 #
 # For this script to work properly you should point the camera at a line at a
 # 45 or so degree angle. Please make sure that only the line is within the
@@ -32,9 +27,10 @@ s1 = Servo(1) # P7 Motor
 s2 = Servo(2) # P8 Steering
 print (s1.calibration()) # show throttle servo calibration
 cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
-steering_gain = 500
+steering_gain = 400
+steering_direction = -1
 kp = 0.4   # P term of the PID
-ki = 0.2     # I term of the PID
+ki = 0.0     # I term of the PID
 kd = 0.3     # D term of the PID
 
 red_led   = LED(1)
@@ -87,7 +83,7 @@ def update_pid():
     d_term = (de / dt) * kd
 
     old_error = error
-    output = p_term + i_term + d_term
+    output = steering_direction * (p_term + i_term + d_term)
     output = constrain(output, -50, 50)
     return output
 
@@ -109,6 +105,7 @@ for r in ROIS: weight_sum += r[4] # r[4] is the roi weight.
 # Camera setup...
 clock = time.clock() # Tracks FPS.
 sensor.reset() # Initialize the camera sensor.
+sensor.__write_reg(0x6B, 0x22)  # switches camera into advanced calibration mode. See this for more: http://forums.openmv.io/viewtopic.php?p=1358#p1358
 sensor.set_pixformat(sensor.RGB565)
 sensor.set_framesize(sensor.QQVGA) # use QQVGA for speed.
 sensor.set_auto_gain(True)    # do some calibration at the start
