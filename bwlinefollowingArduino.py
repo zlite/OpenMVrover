@@ -16,8 +16,8 @@ GRAYSCALE_THRESHOLD = [(200, 255)]
 
 cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
 steer_direction = -1   # use this to revers the steering if your car goes in the wrong direction
-steering_gain = 1.3  # calibration for your car's steering sensitivity
-steering_center = 90  # set to your car servo's center point
+steering_gain = 1.1  # calibration for your car's steering sensitivity
+steering_center = 80  # set to your car servo's center point
 kp = 0.4   # P term of the PID
 ki = 0.0     # I term of the PID
 kd = 0.3     # D term of the PID

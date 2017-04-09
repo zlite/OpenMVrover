@@ -18,7 +18,7 @@ unsigned long time;
 unsigned long lasttime = 0;
 bool LEDState = LOW;
 
-const int BAUD_RATE = 14400;
+const int BAUD_RATE = 9600;
 
 void setup() {
     Serial.begin(BAUD_RATE);
@@ -52,7 +52,6 @@ void loop() {
     }
   }
   myservoa.write(steer); // send values to output
-  delay (20);
   myservob.write(motor);
   delay (20);
 }
