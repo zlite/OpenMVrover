@@ -170,7 +170,7 @@ while(True):
     # the line farther away from the robot for a better prediction.
 #    print("Turn Angle: %f" % deflection_angle)
     now = pyb.millis()
-    if  now > old_time + 1.0 :  # time has passed since last measurement
+    if  now > old_time + 0.01 :  # time has passed since last measurement; this will do it at 100Hz
         measured_angle = deflection_angle + 90
         steer_angle = update_pid()
         old_time = now
