@@ -8,8 +8,7 @@
 import sensor, image, pyb, math, time
 from pyb import Servo
 from pyb import LED
-from pyb import UART
-uart = UART(3, 9600)  # no need to go faster than this. Slower = solid comms
+
 
 # Color Tracking Thresholds (L Min, L Max, A Min, A Max, B Min, B Max)
 # The below thresholds track in general red/green things. You may wish to tune them...
@@ -21,7 +20,7 @@ threshold_index = 1
 # 0 for red, 1 for green, 2 for blue
 
 thresholds = [(30, 100, 15, 127, 15, 127), # generic_red_thresholds
-              (0, 83, -128, 15, -128, 127), # generic_green_thresholds
+             (  0, 100, -128,    5, -126,   -6), # generic_green_thresholds
               (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
 # You may pass up to 16 thresholds above. However, it's not really possible to segment any
 # scene with 16 thresholds before color thresholds start to overlap heavily.
@@ -68,15 +67,13 @@ def constrain(value, min, max):
 
 def steer(angle):
     global steering_gain, cruise_speed, steering_center
+    s1 = Servo(1) # P7
+    s2 = Servo(2) # P8
     angle = int(round((angle+steering_center)*steering_gain))
     constrain(angle, 0, 180)
-    ch1 = str(angle)  # must convert to text to send via Serial
-    ch2 = str(cruise_speed)  # send throttle data, too
-    print(angle)
-    uart.write(ch1)   # send to the Arduino. It looks for channel outputs in order, seperated by a "," and ended with a "\n"
-    uart.write(",")
-    uart.write(ch2)
-    uart.write("\n")
+    s1.pulse_width(1000 + angle)
+    s2.pulse_width(1000 - angle)
+
 
 def update_pid():
     global old_time, old_error, measured_angle, set_angle
@@ -104,7 +101,8 @@ def update_pid():
 ROIS = [ # [ROI, weight]
         (0, 100, 160, 20, 0.5), # You'll need to tweak the weights for your app
         (0, 050, 160, 20, 0.3), # depending on how your robot is setup.
-        (0, 000, 160, 20, 0.1)
+        (0, 000, 160, 20, 0.1),
+        (33,51,104,69,0.5)
        ]
 
 
@@ -120,6 +118,8 @@ sensor.set_pixformat(sensor.RGB565)
 sensor.set_framesize(sensor.QQVGA) # use QQVGA for speed.
 sensor.set_auto_gain(True)    # do some calibration at the start
 sensor.set_auto_whitebal(True)
+sensor.set_vflip(True)
+sensor.set_hmirror(True)
 sensor.skip_frames(60) # Let new settings take effect.
 sensor.set_auto_gain(False)   # now turn off autocalibration before we start color tracking
 sensor.set_auto_whitebal(False)
@@ -170,7 +170,7 @@ while(True):
     # the line farther away from the robot for a better prediction.
 #    print("Turn Angle: %f" % deflection_angle)
     now = pyb.millis()
-    if  now > old_time + 0.01 :  # time has passed since last measurement; this will do it at 100Hz
+    if  now > old_time + 1.0 :  # time has passed since last measurement
         measured_angle = deflection_angle + 90
         steer_angle = update_pid()
         old_time = now
