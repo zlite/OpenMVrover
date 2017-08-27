@@ -115,11 +115,14 @@ sensor.reset() # Initialize the camera sensor.
 sensor.__write_reg(0x6B, 0x22)  # switches camera into advanced calibration mode. See this for more: http://forums.openmv.io/viewtopic.php?p=1358#p1358
 sensor.set_pixformat(sensor.RGB565)
 sensor.set_framesize(sensor.QQVGA) # use QQVGA for speed.
+sensor.set_vflip(True)
+sensor.set_hmirror(True)
 sensor.set_auto_gain(True)    # do some calibration at the start
 sensor.set_auto_whitebal(True)
-sensor.skip_frames(60) # Let new settings take effect.
+sensor.skip_frames(time = 2000)
 sensor.set_auto_gain(False)   # now turn off autocalibration before we start color tracking
 sensor.set_auto_whitebal(False)
+
 
 
 while(True):
