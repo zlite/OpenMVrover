@@ -7,13 +7,10 @@
 
 import sensor, image, pyb, math, time
 from pyb import LED
-from pyb import UART
 from pyb import Pin, Timer
 
 tim = Timer(4, freq=1000) # Frequency in Hz
 
-
-uart = UART(3, 9600, timeout_char=1000)  # no need to go faster than this. Slower = solid comms
 
 # Color Tracking Thresholds (L Min, L Max, A Min, A Max, B Min, B Max)
 # The below thresholds track in general red/green things. You may wish to tune them...
@@ -31,7 +28,7 @@ thresholds = [(0, 100, 12, 126, -128, 127), # generic_red_thresholds
 # scene with 16 thresholds before color thresholds start to overlap heavily.
 
 
-cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
+cruise_speed = 40 # how fast should the car drive, range from 0 to 100
 steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
 steering_gain = 1.5  # calibration for your car's steering sensitivity
 steering_center = 60  # set to your car servo's center point
@@ -65,9 +62,9 @@ def steer(angle):
     angle = int(round((angle+steering_center)*steering_gain))
     angle = constrain(angle, 0, 180)
     angle = 90 - angle
-    left = 90 - angle
+    left = (90 - angle) * (cruise_speed/100)
     left = constrain (left, 0, 100)
-    right = 90 + angle
+    right = (90 + angle) * (cruise_speed/100)
     right = constrain (right, 0, 100)
     print ("left: ", left)
     print ("right: ", right)
