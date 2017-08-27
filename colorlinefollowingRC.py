@@ -17,11 +17,11 @@ uart = UART(3, 9600)  # no need to go faster than this. Slower = solid comms
 #              (30, 100, -64, -8, -32, 32), # generic_green_thresholds
 #              (0, 15, 0, 40, -80, -20)] # generic_blue_thresholds
 
-threshold_index = 1
+threshold_index = 0
 # 0 for red, 1 for green, 2 for blue
 
-thresholds = [(30, 100, 15, 127, 15, 127), # generic_red_thresholds
-              (0, 83, -128, 15, -128, 127), # generic_green_thresholds
+thresholds = [(0, 100, 38, 127, -128, 127), # generic_red_thresholds
+              (0, 100, -128, -8, -128, 77), # generic_green_thresholds
               (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
 # You may pass up to 16 thresholds above. However, it's not really possible to segment any
 # scene with 16 thresholds before color thresholds start to overlap heavily.
@@ -102,9 +102,8 @@ def update_pid():
 # will then be averaged with different weights where the most weight is assigned
 # to the roi near the bottom of the image and less to the next roi and so on.
 ROIS = [ # [ROI, weight]
-        (0, 100, 160, 20, 0.5), # You'll need to tweak the weights for your app
-        (0, 050, 160, 20, 0.3), # depending on how your robot is setup.
-        (0, 000, 160, 20, 0.1)
+        (46,30,86,44,0.0),
+        (30,82,109,36,0.9)
        ]
 
 
