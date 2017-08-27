@@ -9,7 +9,7 @@ import sensor, image, pyb, math, time
 from pyb import Servo
 from pyb import LED
 from pyb import UART
-uart = UART(3, 9600)  # no need to go faster than this. Slower = solid comms
+uart = UART(3, 9600, timeout_char=1000)  # no need to go faster than this. Slower = solid comms
 
 # Color Tracking Thresholds (L Min, L Max, A Min, A Max, B Min, B Max)
 # The below thresholds track in general red/green things. You may wish to tune them...
@@ -20,8 +20,13 @@ uart = UART(3, 9600)  # no need to go faster than this. Slower = solid comms
 threshold_index = 0
 # 0 for red, 1 for green, 2 for blue
 
+<<<<<<< HEAD
 thresholds = [(0, 100, 38, 127, -128, 127), # generic_red_thresholds
               (0, 100, -128, -8, -128, 77), # generic_green_thresholds
+=======
+thresholds = [(0, 100, 12, 126, -128, 127), # generic_red_thresholds
+              (  0,  84, -128,   -8,  -23,  127), # generic_green_thresholds
+>>>>>>> efe91bfb99d4475bb7f25d0fe9200d681568b4d7
               (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
 # You may pass up to 16 thresholds above. However, it's not really possible to segment any
 # scene with 16 thresholds before color thresholds start to overlap heavily.
@@ -29,9 +34,9 @@ thresholds = [(0, 100, 38, 127, -128, 127), # generic_red_thresholds
 
 cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
 steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
-steering_gain = 1.1  # calibration for your car's steering sensitivity
-steering_center = 80  # set to your car servo's center point
-kp = 0.4   # P term of the PID
+steering_gain = 2.5  # calibration for your car's steering sensitivity
+steering_center = 60  # set to your car servo's center point
+kp = 1.0   # P term of the PID
 ki = 0.0     # I term of the PID
 kd = 0.3     # D term of the PID
 
@@ -102,8 +107,14 @@ def update_pid():
 # will then be averaged with different weights where the most weight is assigned
 # to the roi near the bottom of the image and less to the next roi and so on.
 ROIS = [ # [ROI, weight]
+<<<<<<< HEAD
         (46,30,86,44,0.0),
         (30,82,109,36,0.9)
+=======
+        (6,1,144,36, 0.0),
+        (30,39,99,43,0.2),
+        (2,84,158,36,1.0)
+>>>>>>> efe91bfb99d4475bb7f25d0fe9200d681568b4d7
        ]
 
 
@@ -169,7 +180,7 @@ while(True):
     # the line farther away from the robot for a better prediction.
 #    print("Turn Angle: %f" % deflection_angle)
     now = pyb.millis()
-    if  now > old_time + 0.01 :  # time has passed since last measurement; this will do it at 100Hz
+    if  now > old_time + 0.1 :  # time has passed since last measurement
         measured_angle = deflection_angle + 90
         steer_angle = update_pid()
         old_time = now
