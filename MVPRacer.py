@@ -55,6 +55,7 @@ p_term = 0
 i_term = 0
 d_term = 0
 old_time = pyb.millis()
+radians_degrees = 57.3 # constant to convert from radians to degrees
 
 
 
@@ -74,6 +75,7 @@ def steer(angle):
     angle = int(round((angle+steering_center)*steering_gain))
     angle = constrain(angle, 0, 180)
     angle = 90 - angle
+    angle = radians_degrees * math.tan(angle/radians_degrees) # take the tangent to create a non-linear response curver
     left = (90 - angle) * (cruise_speed/100)
     left = constrain (left, 0, 100)
     right = (90 + angle) * (cruise_speed/100)
