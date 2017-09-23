@@ -6,10 +6,19 @@
 # camera's field of view.
 
 import sensor, image, pyb, math, time
-from pyb import Servo
 from pyb import LED
-from pyb import UART
-uart = UART(3, 9600)  # no need to go faster than this. Slower = solid comms
+from pyb import Pin, Timer
+
+tim = Timer(4, freq=1000) # Frequency in Hz
+
+cruise_speed = 40 # how fast should the car drive, range from 0 to 100
+steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
+steering_gain = 1.8  # calibration for your car's steering sensitivity
+steering_center = 40  # set to your car servo's center point
+kp = 0.8   # P term of the PID
+ki = 0.0     # I term of the PID
+kd = 0.6     # D term of the PID
+
 
 # Color Tracking Thresholds (L Min, L Max, A Min, A Max, B Min, B Max)
 # The below thresholds track in general red/green things. You may wish to tune them...
@@ -17,29 +26,27 @@ uart = UART(3, 9600)  # no need to go faster than this. Slower = solid comms
 #              (30, 100, -64, -8, -32, 32), # generic_green_thresholds
 #              (0, 15, 0, 40, -80, -20)] # generic_blue_thresholds
 
-threshold_index = 3
+threshold_index = 0
 # 0 for red, 1 for green, 2 for blue
 
-thresholds = [(30, 100, 15, 127, 15, 127), # generic_red_thresholds
-              (0, 83, -128, 15, -128, 127), # generic_green_thresholds
-              (0, 100, -128, -10, -128, 51), # generic_blue_thresholds
-              (0, 100, -47, 127, 14, 127)] # generic yellow threshold
-              # You may pass up to 16 thresholds above. However, it's not really possible to segment any
+thresholds = [(  0, 100,   17,  126,  -28,  127), # generic_red_thresholds
+              (  0,  84, -128,   -8,  -23,  127), # generic_green_thresholds
+              (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
+# You may pass up to 16 thresholds above. However, it's not really possible to segment any
 # scene with 16 thresholds before color thresholds start to overlap heavily.
 
+# Each roi is (x, y, w, h). The line detection algorithm will try to find the
+# centroid of the largest blob in each roi. The x position of the centroids
+# will then be averaged with different weights where the most weight is assigned
+# to the roi near the bottom of the image and less to the next roi and so on.
+ROIS = [ # [ROI, weight]
+        (38,1,90,38, 0.0),
+        (35,40,109,43,0.2),
+        (0,79,160,41,1.0)
+       ]
 
-cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
-steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
-steering_gain = 1.1  # calibration for your car's steering sensitivity
-steering_center = 80  # set to your car servo's center point
-kp = 0.4   # P term of the PID
-ki = 0.0     # I term of the PID
-kd = 0.3     # D term of the PID
-
-red_led   = LED(1)
-green_led = LED(2)
 blue_led  = LED(3)
-ir_led    = LED(4)
+
 
 old_error = 0
 measured_angle = 0
@@ -49,15 +56,7 @@ i_term = 0
 d_term = 0
 old_time = pyb.millis()
 
-def led_control(x):
-    if   (x&1)==0: red_led.off()
-    elif (x&1)==1: red_led.on()
-    if   (x&2)==0: green_led.off()
-    elif (x&2)==2: green_led.on()
-    if   (x&4)==0: blue_led.off()
-    elif (x&4)==4: blue_led.on()
-    if   (x&8)==0: ir_led.off()
-    elif (x&8)==8: ir_led.on()
+
 
 def constrain(value, min, max):
     if value < min :
@@ -70,14 +69,17 @@ def constrain(value, min, max):
 def steer(angle):
     global steering_gain, cruise_speed, steering_center
     angle = int(round((angle+steering_center)*steering_gain))
-    constrain(angle, 0, 180)
-    ch1 = str(angle)  # must convert to text to send via Serial
-    ch2 = str(cruise_speed)  # send throttle data, too
-    print(angle)
-    uart.write(ch1)   # send to the Arduino. It looks for channel outputs in order, seperated by a "," and ended with a "\n"
-    uart.write(",")
-    uart.write(ch2)
-    uart.write("\n")
+    angle = constrain(angle, 0, 180)
+    angle = 90 - angle
+    left = (90 - angle) * (cruise_speed/100)
+    left = constrain (left, 0, 100)
+    right = (90 + angle) * (cruise_speed/100)
+    right = constrain (right, 0, 100)
+    print ("left: ", left)
+    print ("right: ", right)
+    # Generate a 1KHz square wave on TIM4 with each channel
+    ch1 = tim.channel(1, Timer.PWM, pin=Pin("P7"), pulse_width_percent=left)
+    ch2 = tim.channel(2, Timer.PWM, pin=Pin("P8"), pulse_width_percent=right)
 
 def update_pid():
     global old_time, old_error, measured_angle, set_angle
@@ -98,17 +100,6 @@ def update_pid():
     return output
 
 
-# Each roi is (x, y, w, h). The line detection algorithm will try to find the
-# centroid of the largest blob in each roi. The x position of the centroids
-# will then be averaged with different weights where the most weight is assigned
-# to the roi near the bottom of the image and less to the next roi and so on.
-ROIS = [ # [ROI, weight]
-        (0, 100, 160, 20, 0.1), # You'll need to tweak the weights for your app
-        (0, 050, 160, 20, 0.3), # depending on how your robot is setup.
-        (0, 000, 160, 20, 0.7)
-       ]
-
-
 # Compute the weight divisor (we're computing this so you don't have to make weights add to 1).
 weight_sum = 0
 for r in ROIS: weight_sum += r[4] # r[4] is the roi weight.
@@ -119,17 +110,19 @@ sensor.reset() # Initialize the camera sensor.
 sensor.__write_reg(0x6B, 0x22)  # switches camera into advanced calibration mode. See this for more: http://forums.openmv.io/viewtopic.php?p=1358#p1358
 sensor.set_pixformat(sensor.RGB565)
 sensor.set_framesize(sensor.QQVGA) # use QQVGA for speed.
+sensor.set_vflip(True)
+sensor.set_hmirror(True)
 sensor.set_auto_gain(True)    # do some calibration at the start
 sensor.set_auto_whitebal(True)
-sensor.skip_frames(60) # Let new settings take effect.
+sensor.skip_frames(time = 2000)
 sensor.set_auto_gain(False)   # now turn off autocalibration before we start color tracking
 sensor.set_auto_whitebal(False)
-
 
 
 while(True):
     clock.tick() # Track elapsed milliseconds between snapshots().
     img = sensor.snapshot() # Take a picture and return the image.
+    print("FPS: ",clock.fps())
     centroid_sum = 0
     for r in ROIS:
         blobs = img.find_blobs([thresholds[threshold_index]], roi=r[0:4], merge=True) # r[0:4] is roi tuple.
@@ -171,9 +164,11 @@ while(True):
     # the line farther away from the robot for a better prediction.
 #    print("Turn Angle: %f" % deflection_angle)
     now = pyb.millis()
-    if  now > old_time + 1.0 :  # time has passed since last measurement
+    if  now > old_time + 0.02 :  # time has passed since last measurement; do the PID at 50hz
+        blue_led.on()
         measured_angle = deflection_angle + 90
         steer_angle = update_pid()
         old_time = now
         steer (steer_angle)
-        print(str(measured_angle) + ', ' + str(set_angle) + ', ' + str(steer_angle))
+#        print(str(measured_angle) + ', ' + str(set_angle) + ', ' + str(steer_angle))
+        blue_led.off()
