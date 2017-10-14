@@ -40,7 +40,7 @@ unsigned long serial_throttle_servo_pulse_refreshed = 0, serial_steering_servo_p
 void setup()
 {
     Serial.begin(SERIAL_BAUD_RATE);
-    Serial1.begin(19200);
+    Serial1.begin(SERIAL_BAUD_RATE);
     pinMode(LED_PIN, OUTPUT);
     pinMode(RC_STEERING_PIN, INPUT);
     pinMode(RC_THROTTLE_PIN, INPUT);
@@ -118,10 +118,15 @@ void loop()
     last_rc_throttle_pin_state = rc_throttle_pin_state;
     last_rc_steering_pin_state = rc_steering_pin_state;
 
+    while(Serial.available())
+    {
+        int m = Serial.read();
+        Serial1.write(m);  // echo USB serial to the OpenMV
+    }
     while(Serial1.available())
     {
         int c = Serial1.read();
-        Serial.print(c);  //echo the incoming serial stream from the OpenMV
+        Serial.write(c);  //echo the incoming serial stream from the OpenMV
         memmove(serial_buffer, serial_buffer + 1, sizeof(serial_buffer) - 2);
         serial_buffer[sizeof(serial_buffer) - 2] = c;
 
