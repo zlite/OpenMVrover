@@ -9,8 +9,9 @@ import serial
 
 
 angle_offset = 0 # this compensates for the Lidar being placed in a rotated position
-gain = 1.5 # this is the steering gain. The PWM output to the steering servo must be between 0 (left) and 200 (right)
+gain = 1 # this is the steering gain. The PWM output to the steering servo must be between 0 (left) and 200 (right)
 speed = 1000 # crusing speed, must be between 0 and 3600
+deadband = 2
 steering_correction = -10 # this compensates for any steering bias the car has. Positive numbers steer to the right
 start = time.time()
 stop = False
@@ -52,9 +53,11 @@ def scan(lidar):
             else:  # 10Hz timer has expired
 #                print("this should happen ten times a second")
                 if counter > 0:  # this means we see something
-                    average_angle = (data/counter) - angle_offset # average of detected angles
-                    print ("Average angle: ", average_angle)
-		    Teensy_Port.write("%f\n" % average_angle)			
+                    average_angle = ((data/counter) - angle_offset) # average of detected angles
+		    steer_angle = -gain * (1/math.tan(math.radians(average_angle)))  # de-linearize the response curve and multiply by gain
+		    constrain(steer_angle, deadband, -deadband) # if the wall is right ahead you will get a singularity, so constrain that edge case
+                    print ("Average angle: ", steer_angle)
+		    Teensy_Port.write("%f\n" % steer_angle)			
                     obstacle_direction = int(100*math.atan(math.radians(average_angle)))  # convert to a vector component
                     drive_direction = -1 * obstacle_direction # steer in the opposite direction as obstacle (I'll replace this with a PID)
 #                    print ("Drive direction: ", drive_direction)
