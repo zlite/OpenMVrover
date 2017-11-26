@@ -1,15 +1,16 @@
 // This file is part of the OpenMV project.
 // Copyright (c) 2013-2017 Ibrahim Abdelkader <iabdalkader@openmv.io> & Kwabena W. Agyeman <kwagyeman@openmv.io>
+// Updated for Teensy shield by Chris Anderson: https://circuits.io/circuits/5453306-openmv-teensy-shield
 // This work is licensed under the MIT license, see the file LICENSE for details.
 
-#include <PWMServo.h>
+#include <Servo.h>
 
 #define SERIAL_RX_PIN 0
 #define SERIAL_TX_PIN 1
-#define THROTTLE_SERVO_PIN 22
+#define THROTTLE_SERVO_PIN 20
 #define STEERING_SERVO_PIN 21
-#define RC_THROTTLE_PIN 4
-#define RC_STEERING_PIN 5
+#define RC_THROTTLE_PIN 3
+#define RC_STEERING_PIN 4
 #define LED_PIN 13
 
 #define SERIAL_BAUD_RATE 19200
@@ -39,7 +40,8 @@ unsigned long serial_throttle_servo_pulse_refreshed = 0, serial_steering_servo_p
 void setup()
 {
     Serial.begin(SERIAL_BAUD_RATE);
-    pinMode(LED_PIN, OUTPUT);    
+    Serial1.begin(SERIAL_BAUD_RATE);
+    pinMode(LED_PIN, OUTPUT);
     pinMode(RC_STEERING_PIN, INPUT);
     pinMode(RC_THROTTLE_PIN, INPUT);
     last_microseconds = micros();
@@ -50,7 +52,7 @@ void setup()
 }
 
 void loop()
-{
+{  
     unsigned long microseconds = micros();
     bool rc_throttle_pin_state = digitalRead(RC_THROTTLE_PIN) == HIGH;
     bool rc_steering_pin_state = digitalRead(RC_STEERING_PIN) == HIGH;
@@ -70,6 +72,8 @@ void loop()
         else
         {
            rc_throttle_servo_pulse_length = ((rc_throttle_servo_pulse_length * 3) + temp) >> 2;
+//           Serial.print("Throttle: ");
+//           Serial.println(rc_throttle_servo_pulse_length);
         }
 
         rc_throttle_servo_pulse_refreshed = microseconds;
@@ -97,6 +101,8 @@ void loop()
         else
         {
            rc_steering_servo_pulse_length = ((rc_steering_servo_pulse_length * 3) + temp) >> 2;
+//           Serial.print("Steer: ");
+//           Serial.println(rc_steering_servo_pulse_length);
         }
 
         rc_steering_servo_pulse_refreshed = microseconds;
@@ -114,7 +120,13 @@ void loop()
 
     while(Serial.available())
     {
-        int c = Serial.read();
+        int m = Serial.read();
+        Serial1.write(m);  // echo USB serial to the OpenMV
+    }
+    while(Serial1.available())
+    {
+        int c = Serial1.read();
+        Serial.write(c);  //echo the incoming serial stream from the OpenMV
         memmove(serial_buffer, serial_buffer + 1, sizeof(serial_buffer) - 2);
         serial_buffer[sizeof(serial_buffer) - 2] = c;
 
@@ -185,7 +197,7 @@ void loop()
             }
             else
             {
-                throttle_servo.writeMicroseconds(1500);    
+                throttle_servo.writeMicroseconds(1500);
             }
 
             if((rc_steering_servo_pulse_length < RC_STEERING_DEAD_ZONE_MIN)

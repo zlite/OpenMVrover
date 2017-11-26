@@ -11,7 +11,7 @@ from pyb import Pin, Timer
 
 tim = Timer(4, freq=1000) # Frequency in Hz
 
-cruise_speed = 50 # how fast should the car drive, range from 0 to 100
+cruise_speed = 60 # how fast should the car drive, range from 0 to 100
 steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
 steering_gain = 1.7  # calibration for your car's steering sensitivity
 steering_center = 60  # set to your car servo's center point
@@ -26,11 +26,11 @@ kd = 0.4    # D term of the PID
 #              (30, 100, -64, -8, -32, 32), # generic_green_thresholds
 #              (0, 15, 0, 40, -80, -20)] # generic_blue_thresholds
 
-threshold_index = 0
+threshold_index = 1
 # 0 for red, 1 for green, 2 for blue
 
 thresholds = [(0, 100, -1, 127, -25, 127), # generic_red_thresholds
-              (0, 100, -4, -40, 34, 3), # generic_green_thresholds
+              (0, 100, -87, 18, -128, 33), # generic_green_thresholds
               (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
 # You may pass up to 16 thresholds above. However, it's not really possible to segment any
 # scene with 16 thresholds before color thresholds start to overlap heavily.
@@ -119,14 +119,14 @@ sensor.set_vflip(True)
 sensor.set_hmirror(True)
 sensor.set_auto_gain(True)    # do some calibration at the start
 sensor.set_auto_whitebal(True)
-sensor.skip_frames(time = 2000)
+sensor.skip_frames(time = 0)  # When you're inside, set time to 2000 to do a white balance calibration. Outside, this can be 0
 sensor.set_auto_gain(False)   # now turn off autocalibration before we start color tracking
 sensor.set_auto_whitebal(False)
 
 
 while(True):
     clock.tick() # Track elapsed milliseconds between snapshots().
-    img = sensor.snapshot() # Take a picture and return the image.
+    img = sensor.snapshot().histeq() # Take a picture and return the image. The "histeq()" function does a histogram equalization to compensate for lighting changes
     print("FPS: ",clock.fps())
     centroid_sum = 0
     for r in ROIS:
