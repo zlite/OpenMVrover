@@ -19,10 +19,14 @@ kp = 0.8   # P term of the PID
 ki = 0.0     # I term of the PID
 kd = 0.4    # D term of the PID
 
-Left1 = Pin('P0', Pin.OUT_PP, Pin.PULL_NONE)
-Left2 = Pin('P1', Pin.OUT_PP, Pin.PULL_NONE)
-Right1 = Pin('P2', Pin.OUT_PP, Pin.PULL_NONE)
-Right2 = Pin('P3', Pin.OUT_PP, Pin.PULL_NONE)
+Left1 = Pin('P0', Pin.OUT_PP)
+Left2 = Pin('P1', Pin.OUT_PP)
+Right1 = Pin('P2', Pin.OUT_PP)
+Right2 = Pin('P3', Pin.OUT_PP)
+null = Left1.value(False)
+null = Left2.value(True)
+null = Right1.value(True)
+null = Right2.value(False)
 
 
 # Color Tracking Thresholds (L Min, L Max, A Min, A Max, B Min, B Max)
@@ -63,7 +67,6 @@ old_time = pyb.millis()
 radians_degrees = 57.3 # constant to convert from radians to degrees
 
 
-
 def constrain(value, min, max):
     if value < min :
         return min
@@ -76,10 +79,6 @@ ch1 = tim.channel(1, Timer.PWM, pin=Pin("P7"), pulse_width_percent=0)
 ch2 = tim.channel(2, Timer.PWM, pin=Pin("P8"), pulse_width_percent=0)
 
 def steer(angle):
-    null = Left1.value(False)
-    null = Left2.value(True)
-    null = Right1.value(True)
-    null = Right2.value(False)
     global steering_gain, cruise_speed, steering_center
     angle = int(round((angle+steering_center)*steering_gain))
     angle = constrain(angle, 0, 180)
