@@ -12,9 +12,9 @@ from pyb import Pin, Timer
 tim = Timer(4, freq=1000) # Frequency in Hz
 
 cruise_speed = 60 # how fast should the car drive, range from 0 to 100
-steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
+steering_direction = 1   # use this to revers the steering if your car goes in the wrong direction
 steering_gain = 1.7  # calibration for your car's steering sensitivity
-steering_center = 30  # set to your car's center point
+steering_center = 85  # set to your car's center point
 kp = 0.8   # P term of the PID
 ki = 0.0     # I term of the PID
 kd = 0.4    # D term of the PID
@@ -80,7 +80,7 @@ ch2 = tim.channel(2, Timer.PWM, pin=Pin("P8"), pulse_width_percent=0)
 
 def steer(angle):
     global steering_gain, cruise_speed, steering_center
-    angle = int(round((angle+steering_center)*steering_gain))
+    angle = int(round(steering_direction*(angle+steering_center)*steering_gain))
     angle = constrain(angle, 0, 180)
     angle = 90 - angle
     angle = radians_degrees * math.tan(angle/radians_degrees) # take the tangent to create a non-linear response curver
