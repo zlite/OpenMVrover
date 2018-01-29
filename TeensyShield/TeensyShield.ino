@@ -34,6 +34,7 @@ unsigned long last_rc_throttle_microseconds, last_rc_steering_microseconds;
 unsigned long rc_throttle_servo_pulse_length = 0, rc_steering_servo_pulse_length = 0;
 unsigned long rc_throttle_servo_pulse_refreshed = 0, rc_steering_servo_pulse_refreshed = 0;
 float voltage;
+float throttle_compensation = 1;
 
 char serial_buffer[16] = {};
 unsigned long serial_throttle_servo_pulse_length = 0, serial_steering_servo_pulse_length = 0;
@@ -60,8 +61,10 @@ void loop()
     bool rc_throttle_pin_state = digitalRead(RC_THROTTLE_PIN) == HIGH;
     bool rc_steering_pin_state = digitalRead(RC_STEERING_PIN) == HIGH;
     voltage = analogRead(VOLTAGE_PIN);
-    Serial1.print("Voltage: ");
-    Serial1.println(voltage);
+    voltage = voltage/64.8; //divisor for the resistor divider
+    Serial.print("Voltage: ");
+    Serial.println(voltage);
+    throttle_compensation = 7.4/voltage;
     if(rc_throttle_pin_state && (!last_rc_throttle_pin_state)) // rising edge
     {
         last_rc_throttle_microseconds = microseconds;
