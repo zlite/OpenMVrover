@@ -1,0 +1,42 @@
+[roslaunch][INFO] 2018-01-01 22:46:21,407: Checking log directory for disk usage. This may take awhile.
+Press Ctrl-C to interrupt
+[roslaunch][INFO] 2018-01-01 22:46:21,424: Done checking log file disk usage. Usage is <1GB.
+[roslaunch][INFO] 2018-01-01 22:46:21,426: roslaunch starting with args ['/opt/ros/kinetic/bin/roslaunch', 'duckietown', 'joystick.launch', 'veh:=chris']
+[roslaunch][INFO] 2018-01-01 22:46:21,427: roslaunch env is {'ROS_LANG_DISABLE': 'gennodejs:geneus:genlisp', 'ROS_DISTRO': 'kinetic', 'LESSOPEN': '| /usr/bin/lesspipe %s', 'SSH_CLIENT': '192.168.86.42 9191 22', 'LOGNAME': 'pi', 'USER': 'pi', 'HOME': '/home/pi', 'ROS_HOSTNAME': 'duckiebot.local', 'PATH': '/opt/ros/kinetic/bin:/home/pi/bin:/home/pi/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin', 'DUCKIEFLEET_ROOT': '/home/pi/duckiefleet', 'CMAKE_PREFIX_PATH': '/home/pi/Software/catkin_ws/devel:/opt/ros/kinetic', 'LD_LIBRARY_PATH': '/home/pi/Software/catkin_ws/devel/lib:/opt/ros/kinetic/lib', 'SSH_CONNECTION': '192.168.86.42 9191 192.168.86.20 22', 'LANG': 'en_US.UTF-8', 'TERM': 'cygwin', 'SHELL': '/bin/bash', 'SHLVL': '1', 'ROS_LOG_FILENAME': '/home/pi/.ros/log/346f880e-ef3d-11e7-8913-b827ebe4d5fb/roslaunch-duckiebot-11119.log', 'ROS_ETC_DIR': '/opt/ros/kinetic/etc/ros', 'XDG_RUNTIME_DIR': '/run/user/1001', 'PYTHONPATH': '/home/pi/Software/catkin_ws/devel/lib/python2.7/dist-packages:/opt/ros/kinetic/lib/python2.7/dist-packages:/home/pi/Software/catkin_ws/src:/home/pi/Software/catkin_ws/src', 'ROS_ROOT': '/opt/ros/kinetic/share/ros', 'PKG_CONFIG_PATH': '/home/pi/Software/catkin_ws/devel/lib/pkgconfig:/opt/ros/kinetic/lib/pkgconfig', 'ROS_PACKAGE_PATH': '/home/pi/Software/catkin_ws/src:/opt/ros/kinetic/share', 'XDG_SESSION_ID': 'c1', '_': '/opt/ros/kinetic/bin/roslaunch', 'DUCKIETOWN_ROOT': '/home/pi/Software', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'GTK_MODULES': 'gail:atk-bridge', 'SSH_TTY': '/dev/pts/0', 'OLDPWD': '/usr', 'HOSTNAME': 'duckiebot', 'ROSLISP_PACKAGE_DIRECTORIES': '/home/pi/Software/catkin_ws/devel/share/common-lisp', 'XDG_DATA_DIRS': '/usr/local/share:/usr/share:/var/lib/snapd/desktop', 'PWD': '/home/pi', 'ROS_MASTER_URI': 'http://localhost:11311', 'MAIL': '/var/mail/pi', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.Z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.jpg=01;35:*.jpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'}
+[roslaunch][INFO] 2018-01-01 22:46:21,428: starting in server mode
+[roslaunch.parent][INFO] 2018-01-01 22:46:21,430: starting roslaunch parent run
+[roslaunch][INFO] 2018-01-01 22:46:21,432: loading roscore config file /opt/ros/kinetic/etc/ros/roscore.xml
+[roslaunch][INFO] 2018-01-01 22:46:22,463: Added core node of type [rosout/rosout] in namespace [/]
+[roslaunch.config][INFO] 2018-01-01 22:46:22,465: loading config file /home/pi/Software/catkin_ws/src/00-infrastructure/duckietown/launch/joystick.launch
+[roslaunch][INFO] 2018-01-01 22:46:23,636: Added node of type [joy/joy_node] in namespace [/chris/]
+[roslaunch][INFO] 2018-01-01 22:46:23,855: Added node of type [joy_mapper/joy_mapper_node.py] in namespace [/chris/]
+[roslaunch][INFO] 2018-01-01 22:46:23,875: Added node of type [dagu_car/inverse_kinematics_node.py] in namespace [/chris/]
+[roslaunch][INFO] 2018-01-01 22:46:23,897: Added node of type [dagu_car/forward_kinematics_node.py] in namespace [/chris/]
+[roslaunch][INFO] 2018-01-01 22:46:23,917: Added node of type [dagu_car/velocity_to_pose_node.py] in namespace [/chris/]
+[roslaunch][INFO] 2018-01-01 22:46:23,928: Added node of type [dagu_car/wheels_driver_node.py] in namespace [/chris/]
+[roslaunch][INFO] 2018-01-01 22:46:23,929: ... selected machine [chris] for node of type [joy/joy_node]
+[roslaunch][INFO] 2018-01-01 22:46:23,930: ... selected machine [chris] for node of type [joy_mapper/joy_mapper_node.py]
+[roslaunch][INFO] 2018-01-01 22:46:23,931: ... selected machine [chris] for node of type [dagu_car/inverse_kinematics_node.py]
+[roslaunch][INFO] 2018-01-01 22:46:23,932: ... selected machine [chris] for node of type [dagu_car/forward_kinematics_node.py]
+[roslaunch][INFO] 2018-01-01 22:46:23,933: ... selected machine [chris] for node of type [dagu_car/velocity_to_pose_node.py]
+[roslaunch][INFO] 2018-01-01 22:46:23,934: ... selected machine [chris] for node of type [dagu_car/wheels_driver_node.py]
+[roslaunch][ERROR] 2018-01-01 22:46:28,949: cannot resolve host address for machine [chris.local]
+[roslaunch][ERROR] 2018-01-01 22:46:28,950: The traceback for the exception was written to the log file
+[roslaunch][ERROR] 2018-01-01 22:46:28,955: Traceback (most recent call last):
+  File "/opt/ros/kinetic/lib/python2.7/dist-packages/roslaunch/__init__.py", line 306, in main
+    p.start()
+  File "/opt/ros/kinetic/lib/python2.7/dist-packages/roslaunch/parent.py", line 268, in start
+    self._start_infrastructure()
+  File "/opt/ros/kinetic/lib/python2.7/dist-packages/roslaunch/parent.py", line 217, in _start_infrastructure
+    self._load_config()
+  File "/opt/ros/kinetic/lib/python2.7/dist-packages/roslaunch/parent.py", line 132, in _load_config
+    roslaunch_strs=self.roslaunch_strs, verbose=self.verbose)
+  File "/opt/ros/kinetic/lib/python2.7/dist-packages/roslaunch/config.py", line 471, in load_config_default
+    config.assign_machines()
+  File "/opt/ros/kinetic/lib/python2.7/dist-packages/roslaunch/config.py", line 222, in assign_machines
+    if [m for m in machine_unify_dict.values() if not is_machine_local(m)]:
+  File "/opt/ros/kinetic/lib/python2.7/dist-packages/roslaunch/core.py", line 96, in is_machine_local
+    raise RLException("cannot resolve host address for machine [%s]"%machine.address)
+RLException: cannot resolve host address for machine [chris.local]
+
+[rospy.core][INFO] 2018-01-01 22:46:28,957: signal_shutdown [atexit]

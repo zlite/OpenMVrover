@@ -12,6 +12,7 @@
 #define RC_THROTTLE_PIN 3
 #define RC_STEERING_PIN 4
 #define LED_PIN 13
+#define VOLTAGE_PIN 14
 
 #define SERIAL_BAUD_RATE 19200
 
@@ -32,6 +33,7 @@ bool last_rc_throttle_pin_state, last_rc_steering_pin_state;
 unsigned long last_rc_throttle_microseconds, last_rc_steering_microseconds;
 unsigned long rc_throttle_servo_pulse_length = 0, rc_steering_servo_pulse_length = 0;
 unsigned long rc_throttle_servo_pulse_refreshed = 0, rc_steering_servo_pulse_refreshed = 0;
+float voltage;
 
 char serial_buffer[16] = {};
 unsigned long serial_throttle_servo_pulse_length = 0, serial_steering_servo_pulse_length = 0;
@@ -44,6 +46,7 @@ void setup()
     pinMode(LED_PIN, OUTPUT);
     pinMode(RC_STEERING_PIN, INPUT);
     pinMode(RC_THROTTLE_PIN, INPUT);
+    pinMode(VOLTAGE_PIN, INPUT);
     last_microseconds = micros();
     last_rc_throttle_pin_state = digitalRead(RC_THROTTLE_PIN) == HIGH;
     last_rc_steering_pin_state = digitalRead(RC_STEERING_PIN) == HIGH;
@@ -56,6 +59,9 @@ void loop()
     unsigned long microseconds = micros();
     bool rc_throttle_pin_state = digitalRead(RC_THROTTLE_PIN) == HIGH;
     bool rc_steering_pin_state = digitalRead(RC_STEERING_PIN) == HIGH;
+    voltage = analogRead(VOLTAGE_PIN);
+    Serial1.print("Voltage: ");
+    Serial1.println(voltage);
     if(rc_throttle_pin_state && (!last_rc_throttle_pin_state)) // rising edge
     {
         last_rc_throttle_microseconds = microseconds;
