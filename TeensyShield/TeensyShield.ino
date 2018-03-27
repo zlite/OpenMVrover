@@ -9,10 +9,10 @@
 #define SERIAL_TX_PIN 1
 #define THROTTLE_SERVO_PIN 20
 #define STEERING_SERVO_PIN 21
-#define RC_THROTTLE_PIN 3
-#define RC_STEERING_PIN 4
+#define RC_THROTTLE_PIN 4
+#define RC_STEERING_PIN 3
 #define LED_PIN 13
-#define VOLTAGE_PIN 14
+#define VOLTAGE_PIN 15
 
 #define SERIAL_BAUD_RATE 19200
 
@@ -53,6 +53,7 @@ void setup()
     last_rc_steering_pin_state = digitalRead(RC_STEERING_PIN) == HIGH;
     last_rc_throttle_microseconds = last_microseconds;
     last_rc_steering_microseconds = last_microseconds;
+    digitalWrite(LED_PIN,HIGH);
 }
 
 void loop()
@@ -62,8 +63,8 @@ void loop()
     bool rc_steering_pin_state = digitalRead(RC_STEERING_PIN) == HIGH;
     voltage = analogRead(VOLTAGE_PIN);
     voltage = voltage/64.8; //divisor for the resistor divider
-    Serial.print("Voltage: ");
-    Serial.println(voltage);
+//    Serial.print("Voltage: ");
+//    Serial.println(voltage);
     throttle_compensation = 7.4/voltage;
     if(rc_throttle_pin_state && (!last_rc_throttle_pin_state)) // rising edge
     {
@@ -81,8 +82,6 @@ void loop()
         else
         {
            rc_throttle_servo_pulse_length = ((rc_throttle_servo_pulse_length * 3) + temp) >> 2;
-//           Serial.print("Throttle: ");
-//           Serial.println(rc_throttle_servo_pulse_length);
         }
 
         rc_throttle_servo_pulse_refreshed = microseconds;
@@ -203,6 +202,8 @@ void loop()
             || (rc_throttle_servo_pulse_length > RC_THROTTLE_DEAD_ZONE_MAX))
             {
                 throttle_servo.writeMicroseconds(serial_throttle_servo_pulse_length);
+                Serial.print("Throttle: ");
+                Serial.println(serial_throttle_servo_pulse_length);
             }
             else
             {
