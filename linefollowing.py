@@ -1,6 +1,6 @@
 # This file is part of the OpenMV project.
 # Copyright (c) 2013-2017 Ibrahim Abdelkader <iabdalkader@openmv.io> & Kwabena W. Agyeman <kwagyeman@openmv.io>
-# Modified to use OpenMV Motor Shield by Chris Anderson
+# Modified to use OpenMV Motor Shield by Chris Anderson, DIY Robocars
 # This work is licensed under the MIT license, see the file LICENSE for details.
 
 import sensor, image, time, math, pyb
