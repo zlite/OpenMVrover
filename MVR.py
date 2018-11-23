@@ -65,8 +65,8 @@ thresholds = [(  0, 100,   36,  127,  -25,  127), # generic_red_thresholds
 # to the roi near the bottom of the image and less to the next roi and so on.
 ROIS = [ # [ROI, weight]
         (38,1,90,38, 0.4),
-        (35,40,109,43,0.2),
-        (0,79,160,41,0.6)
+        (35,40,109,43,0.6),
+        (0,79,160,41,0.2)
        ]
 
 blue_led  = LED(3)
