@@ -47,9 +47,7 @@ STEERING_D_GAIN = -12 # Make this larger as you increase your speed and vice ver
 
 # Selects motor/servo controller method...
 ARDUINO_SERVO_CONTROLLER = False
-
 NATIVE_SERVO_CONTROLLER = False
-
 NATIVE_MOTOR_CONTROLLER = True
 
 # Tweak these values for your robocar if you're using servos.
