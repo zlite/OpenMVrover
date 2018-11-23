@@ -122,8 +122,9 @@ if NATIVE_MOTOR_CONTROLLER:
     tim = Timer(4, freq=1000) # Frequency in Hz
     ch1 = tim.channel(1, pyb.Timer.PWM, pin=pyb.Pin("P7"))
     ch2 = tim.channel(2, pyb.Timer.PWM, pin=pyb.Pin("P8"))
-    cruise_speed = 50
     radians_degrees = 57.3 # constant to convert from radians to degrees
+
+    cruise_speed = 50
     steering_direction = 1   # use this to reverse the steering if your car goes in the wrong direction
     steering_gain = 1.0  # calibration for your car's steering sensitivity
     steering_center = 0  # set to your car's steering center point
