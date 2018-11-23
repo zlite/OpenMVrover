@@ -106,14 +106,6 @@ if NATIVE_MOTOR_CONTROLLER:
     # If they are not equal then the motor will spin one way other the
     # other depending on its hookup and the value of channel 0.
 
-    pinADir0.value(1)
-    pinADir1.value(0)
-
-    # Dir0/1 must be not equal to each other for forward or backwards
-    # operation. If they are equal then that's a brake operation.
-    # If they are not equal then the motor will spin one way other the
-    # other depending on its hookup and the value of channel 0.
-
     pinBDir0.value(0)
     pinBDir1.value(1)
 
