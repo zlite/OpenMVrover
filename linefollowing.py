@@ -132,7 +132,7 @@ def steer(throttle, angle):
     angle = int(round(angle+steering_center))
     angle = constrain(angle, 0, 180)
     angle = angle - 90
-    angle = radians_degrees * math.tan(angle/radians_degrees) # take the tangent to create a non-linear response curver
+    angle = radians_degrees * math.tan(angle/radians_degrees) # take the tangent to create a non-linear response curve
     angle = angle * steering_gain
     print ("Calculated angle", angle)
     left = angle*steering_direction + throttle + cruise_speed
