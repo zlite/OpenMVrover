@@ -11,6 +11,7 @@
 #define STEERING_SERVO_PIN 21
 #define RC_THROTTLE_PIN 4
 #define RC_STEERING_PIN 3
+#define RC_SWITCH_PIN 5
 #define LED_PIN 13
 #define VOLTAGE_PIN 15
 
@@ -51,6 +52,7 @@ void setup()
     last_microseconds = micros();
     last_rc_throttle_pin_state = digitalRead(RC_THROTTLE_PIN) == HIGH;
     last_rc_steering_pin_state = digitalRead(RC_STEERING_PIN) == HIGH;
+    last_rc_steering_pin_state = digitalRead(RC_SWITCH_PIN) == HIGH;
     last_rc_throttle_microseconds = last_microseconds;
     last_rc_steering_microseconds = last_microseconds;
     digitalWrite(LED_PIN,HIGH);
@@ -61,6 +63,7 @@ void loop()
     unsigned long microseconds = micros();
     bool rc_throttle_pin_state = digitalRead(RC_THROTTLE_PIN) == HIGH;
     bool rc_steering_pin_state = digitalRead(RC_STEERING_PIN) == HIGH;
+    bool rc_steering_pin_state = digitalRead(RC_SWITCH_PIN) == HIGH;
     voltage = analogRead(VOLTAGE_PIN);
     voltage = voltage/64.8; //divisor for the resistor divider
 //    Serial.print("Voltage: ");

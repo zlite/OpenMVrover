@@ -175,7 +175,7 @@ while(True):
     now = pyb.millis()
     if  now > old_time + 1.0 :  # time has passed since last measurement
 
-        if now > led_time + 100 0: # switch LED every second
+        if now > led_time + 1000: # switch LED every second
             if led_state == True:
                 led_control(0) # turn off LED
                 led_state = False
