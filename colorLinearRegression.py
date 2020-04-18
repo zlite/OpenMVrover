@@ -11,21 +11,18 @@ from pyb import LED
 from pyb import UART
 uart = UART(3, 19200)  # Use UART 2 (pins 3 and 5). No need to go faster than this. Slower = solid comms
 
-# Color Tracking Thresholds (L Min, L Max, A Min, A Max, B Min, B Max)
-# The below thresholds track in general red/green things. You may wish to tune them...
-# old thresholds = [(30, 100, 15, 127, 15, 127), # generic_red_thresholds
-#              (30, 100, -64, -8, -32, 32), # generic_green_thresholds
-#              (0, 15, 0, 40, -80, -20)] # generic_blue_thresholds
 
-threshold_index = 1
-# 0 for red, 1 for green, 2 for blue
+red_threshold = (0, 100, 35, 127, -12, 127) # L A B
+blue_threshold = (0, 100, -128, 5, -128, -11) # L A B
 
-thresholds = [(30, 100, 15, 127, 15, 127), # generic_red_thresholds
-              (0, 83, -128, 15, -128, 127), # generic_green_thresholds
-              (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
-# You may pass up to 16 thresholds above. However, it's not really possible to segment any
-# scene with 16 thresholds before color thresholds start to overlap heavily.
+# THRESHOLD = (0, 100, -128, 0, -128, -24) # blue threshold
+THRESHOLD = (0, 100, 35, 127, -15, 127) # red threshold
 
+
+TARGET_POINTS = [(80, 68),   # (x, y) CHANGE ME!
+                 (240, 68),   # (x, y) CHANGE ME!
+                 (319, 240), # (x, y) CHANGE ME!
+                 (1,240)] # (x, y) CHANGE ME!
 
 cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
 steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
@@ -74,7 +71,7 @@ def steer(angle):
     constrain(angle, 0, 180)
     ch1 = str(angle)  # must convert to text to send via Serial
     ch2 = str(cruise_speed)  # send throttle data, too
-    print(angle)
+#    print(angle)
     uart.write(ch1)   # send to the Arduino. It looks for channel outputs in order, seperated by a "," and ended with a "\n"
     uart.write(",")
     uart.write(ch2)
@@ -99,27 +96,13 @@ def update_pid():
     return output
 
 
-# Each roi is (x, y, w, h). The line detection algorithm will try to find the
-# centroid of the largest blob in each roi. The x position of the centroids
-# will then be averaged with different weights where the most weight is assigned
-# to the roi near the bottom of the image and less to the next roi and so on.
-ROIS = [ # [ROI, weight]
-        (0, 100, 160, 20, 0.5), # You'll need to tweak the weights for your app
-        (0, 050, 160, 20, 0.3), # depending on how your robot is setup.
-        (0, 000, 160, 20, 0.1)
-       ]
-
-
-# Compute the weight divisor (we're computing this so you don't have to make weights add to 1).
-weight_sum = 0
-for r in ROIS: weight_sum += r[4] # r[4] is the roi weight.
 
 # Camera setup...
 clock = time.clock() # Tracks FPS.
 sensor.reset() # Initialize the camera sensor.
 sensor.__write_reg(0x6B, 0x22)  # switches camera into advanced calibration mode. See this for more: http://forums.openmv.io/viewtopic.php?p=1358#p1358
 sensor.set_pixformat(sensor.RGB565)
-sensor.set_framesize(sensor.QQVGA) # use QQVGA for speed.
+sensor.set_framesize(sensor.QVGA) # use QVGA for speed.
 sensor.set_vflip(True)
 sensor.set_auto_gain(True)    # do some calibration at the start
 sensor.set_auto_whitebal(True)
@@ -131,50 +114,26 @@ sensor.set_auto_whitebal(False)
 
 while(True):
     clock.tick() # Track elapsed milliseconds between snapshots().
-    img = sensor.snapshot() # Take a picture and return the image.
-    centroid_sum = 0
-    for r in ROIS:
-        blobs = img.find_blobs([thresholds[threshold_index]], roi=r[0:4], merge=True) # r[0:4] is roi tuple.
-        if blobs:
-            # Find the index of the blob with the most pixels.
-            most_pixels = 0
-            largest_blob = 0
-            for i in range(len(blobs)):
-                if blobs[i].pixels() > most_pixels:
-                    most_pixels = blobs[i].pixels()
-                    largest_blob = i
+    img = sensor.snapshot().lens_corr(strength = 1.8, zoom = 1)  # do lens correcton for fisheye
+    img = img.rotation_corr(corners = TARGET_POINTS)    # correct perspective to give top-down view
+    line = img.get_regression([THRESHOLD], robust = True)  # do linear regression for desired color
+    if (line): img.draw_line(line.line(), color = 127)
 
-            # Draw a rect around the blob.
-            img.draw_rectangle(blobs[largest_blob].rect())
-            img.draw_cross(blobs[largest_blob].cx(),
-                           blobs[largest_blob].cy())
-
-            centroid_sum += blobs[largest_blob].cx() * r[4] # r[4] is the roi weight.
-
-    center_pos = (centroid_sum / weight_sum) # Determine center of line.
-
-    # Convert the center_pos to a deflection angle. We're using a non-linear
-    # operation so that the response gets stronger the farther off the line we
-    # are. Non-linear operations are good to use on the output of algorithms
-    # like this to cause a response "trigger".
-    deflection_angle = 0
-    # The 80 is from half the X res, the 60 is from half the Y res. The
-    # equation below is just computing the angle of a triangle where the
-    # opposite side of the triangle is the deviation of the center position
-    # from the center and the adjacent side is half the Y res. This limits
-    # the angle output to around -45 to 45. (It's not quite -45 and 45).
-    deflection_angle = -math.atan((center_pos-80)/60)
+    deflection_angle = -math.atan2(line.line()[1]-line.line()[3],line.line()[0]-line.line()[2])
 
     # Convert angle in radians to degrees.
     deflection_angle = math.degrees(deflection_angle)
+    deflection_angle = 90 - deflection_angle
 
-    # Now you have an angle telling you how much to turn the robot by which
+    print("FPS %f" % clock.fps())
+#    print(deflection_angle)
+
+    # Now you have an angle telling you how much to turn the robot which
     # incorporates the part of the line nearest to the robot and parts of
     # the line farther away from the robot for a better prediction.
 #    print("Turn Angle: %f" % deflection_angle)
     now = pyb.millis()
     if  now > old_time + 1.0 :  # time has passed since last measurement
-
         if now > led_time + 1000: # switch LED every second
             if led_state == True:
                 led_control(0) # turn off LED
@@ -188,4 +147,4 @@ while(True):
         steer_angle = update_pid()
         old_time = now
         steer (steer_angle)
-        print(str(measured_angle) + ', ' + str(set_angle) + ', ' + str(steer_angle))
+ #       print(str(measured_angle) + ', ' + str(set_angle) + ', ' + str(steer_angle))
