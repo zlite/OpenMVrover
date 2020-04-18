@@ -12,9 +12,6 @@ from pyb import UART
 uart = UART(3, 19200)  # Use UART 2 (pins 3 and 5). No need to go faster than this. Slower = solid comms
 
 
-red_threshold = (0, 100, 35, 127, -12, 127) # L A B
-blue_threshold = (0, 100, -128, 5, -128, -11) # L A B
-
 # THRESHOLD = (0, 100, -128, 0, -128, -24) # blue threshold
 THRESHOLD = (0, 100, 35, 127, -15, 127) # red threshold
 
