@@ -9,19 +9,26 @@ import sensor, image, pyb, math, time
 from pyb import Servo
 from pyb import LED
 from pyb import UART
-uart = UART(3, 19200)  # Use UART 2 (pins 3 and 5). No need to go faster than this. Slower = solid comms
+from pyb import Pin
 
 
-# THRESHOLD = (0, 100, -128, 0, -128, -24) # blue threshold
-THRESHOLD = (0, 100, 35, 127, -15, 127) # red threshold
+switch_pin = Pin('P7', Pin.IN, Pin.PULL_DOWN)
+
+uart = UART(3, 19200)  # Use UART 3 (pins 4 and 5). No need to go faster than this. Slower = solid comms
 
 
-TARGET_POINTS = [(80, 68),   # (x, y) CHANGE ME!
-                 (240, 68),   # (x, y) CHANGE ME!
-                 (319, 240), # (x, y) CHANGE ME!
-                 (1,240)] # (x, y) CHANGE ME!
+THRESHOLD = (0, 100, -35, 127, -128, -30) # blue threshold
+# THRESHOLD = (0, 100, 35, 127, -15, 127) # red threshold
 
-cruise_speed = 0 # how fast should the car drive, range from 1000 to 2000
+TARGET_POINTS = [(70, 60),   # (x, y) CHANGE ME!
+                 (285, 60),
+                 (319, 239),
+                 (1,239)]
+
+
+
+
+cruise_speed = 1575 # how fast should the car drive, range from 1000 to 2000. 1500 is stopped. 1575 is slowest it can go
 steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
 steering_gain = 1.1  # calibration for your car's steering sensitivity
 steering_center = 80  # set to your car servo's center point
@@ -38,11 +45,13 @@ led_time = pyb.millis()
 
 old_error = 0
 measured_angle = 0
+gain = 5
 set_angle = 90 # this is the desired steering angle (straight ahead)
 p_term = 0
 i_term = 0
 d_term = 0
 old_time = pyb.millis()
+temp = ""
 
 def led_control(x):
     if   (x&1)==0: red_led.off()
@@ -111,37 +120,43 @@ sensor.set_auto_whitebal(False)
 
 while(True):
     clock.tick() # Track elapsed milliseconds between snapshots().
-    img = sensor.snapshot().lens_corr(strength = 1.8, zoom = 1)  # do lens correcton for fisheye
-    img = img.rotation_corr(corners = TARGET_POINTS)    # correct perspective to give top-down view
-    line = img.get_regression([THRESHOLD], robust = True)  # do linear regression for desired color
-    if (line): img.draw_line(line.line(), color = 127)
+    switch = switch_pin.value() # get value, 0 or 1
+    if switch == 1:  # Teensy says you're in MV mode
+        img = sensor.snapshot().lens_corr(strength = 1.8, zoom = 1)  # do lens correcton for fisheye
+        img = img.rotation_corr(corners = TARGET_POINTS)    # correct perspective to give top-down view
+        line = img.get_regression([THRESHOLD], robust = True)  # do linear regression for desired color
+        if (line):
+            img.draw_line(line.line(), color = 127)
+            deflection_angle = -math.atan2(line.line()[1]-line.line()[3],line.line()[0]-line.line()[2])
 
-    deflection_angle = -math.atan2(line.line()[1]-line.line()[3],line.line()[0]-line.line()[2])
+            # Convert angle in radians to degrees.
+            deflection_angle = math.degrees(deflection_angle)
+            deflection_angle = 90 - deflection_angle
 
-    # Convert angle in radians to degrees.
-    deflection_angle = math.degrees(deflection_angle)
-    deflection_angle = 90 - deflection_angle
+            print("FPS %f" % clock.fps())
+        #    print(deflection_angle)
 
-    print("FPS %f" % clock.fps())
-#    print(deflection_angle)
+            # Now you have an angle telling you how much to turn the robot which
+            # incorporates the part of the line nearest to the robot and parts of
+            # the line farther away from the robot for a better prediction.
+        #    print("Turn Angle: %f" % deflection_angle)
+            now = pyb.millis()
+            if  now > old_time + 1.0 :  # time has passed since last measurement
+                if now > led_time + 1000: # switch LED every second
+                    if led_state == True:
+                        led_control(0) # turn off LED
+                        led_state = False
+                    else:
+                        led_control(2) # turn on LED
+                        led_state = True
+                    led_time = now   # reset time counter
 
-    # Now you have an angle telling you how much to turn the robot which
-    # incorporates the part of the line nearest to the robot and parts of
-    # the line farther away from the robot for a better prediction.
-#    print("Turn Angle: %f" % deflection_angle)
-    now = pyb.millis()
-    if  now > old_time + 1.0 :  # time has passed since last measurement
-        if now > led_time + 1000: # switch LED every second
-            if led_state == True:
-                led_control(0) # turn off LED
-                led_state = False
-            else:
-                led_control(2) # turn on LED
-                led_state = True
-            led_time = now   # reset time counter
+                measured_angle = deflection_angle + 90
+                steer_angle = update_pid()
+                old_time = now
+                steer (steer_angle*-gain)
+#                print(steer_angle*-gain)
+    else:
+        print(clock.fps())
+        time.sleep(0.01)
 
-        measured_angle = deflection_angle + 90
-        steer_angle = update_pid()
-        old_time = now
-        steer (steer_angle)
- #       print(str(measured_angle) + ', ' + str(set_angle) + ', ' + str(steer_angle))

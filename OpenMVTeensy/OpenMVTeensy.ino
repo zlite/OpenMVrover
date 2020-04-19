@@ -7,6 +7,7 @@ Servo myservoa, myservob; // create servo objects to control servos
 #define RC1_pin 3
 #define RC2_pin 4
 #define RC3_pin 5
+#define SwitchPin 10
 
 const int BAUD_RATE = 19200;
 int RC;
@@ -26,12 +27,14 @@ void setup() {
     pinMode(RC1_pin, INPUT);
     pinMode(RC2_pin, INPUT);
     pinMode(RC3_pin, INPUT);
+    pinMode(SwitchPin, OUTPUT);
     myservoa.attach(SteeringPin);// attach servo on Output 1 to servo object
     myservob.attach(MotorPin);// attach servo on Output 2 to servo object
     pinMode(LED_BUILTIN, OUTPUT);  // enable LED 
 }
 
 void RCcontrol() {
+  digitalWrite(SwitchPin, LOW);
   RC1_value = pulseIn(RC1_pin, HIGH);  // read rc inputs
   RC2_value = pulseIn(RC2_pin, HIGH);
   myservoa.write(RC1_value); // mirror values to output
@@ -41,6 +44,7 @@ void RCcontrol() {
 }
 
 void OpenMVcontrol() {
+    digitalWrite(SwitchPin, HIGH);  // tell OpenMV to take control and start sending data
     while (Serial1.available() > 0) {
          // look for the next valid integer in the incoming serial stream:
       int tempsteer = Serial1.parseInt();  
@@ -56,12 +60,10 @@ void OpenMVcontrol() {
         motor=tempmotor;
         LEDState = !LEDState; // reverse the LED state
         digitalWrite(LED_BUILTIN, LEDState);   // turn on or off the LED to show activity
+        myservoa.write(steer); // send values to output
+        myservob.write(motor);
         }
-      }
-  myservoa.write(steer); // send values to output
-  myservob.write(motor);
-  delay (20);
-  
+      }  
 }
 
 void loop() {

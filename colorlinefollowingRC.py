@@ -9,7 +9,7 @@ import sensor, image, pyb, math, time
 from pyb import Servo
 from pyb import LED
 from pyb import UART
-uart = UART(3, 19200)  # Use UART 2 (pins 3 and 5). No need to go faster than this. Slower = solid comms
+uart = UART(3, 19200)  # Use UART 3 (pins 4 and 5). No need to go faster than this. Slower = solid comms
 
 # Color Tracking Thresholds (L Min, L Max, A Min, A Max, B Min, B Max)
 # The below thresholds track in general red/green things. You may wish to tune them...
