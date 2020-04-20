@@ -14,6 +14,7 @@ int RC;
 unsigned long RC1_value;
 unsigned long RC2_value;
 unsigned long RC3_value;
+boolean RC_throttle = true;  // if you want to control the throttle manually when it's under OpenMV control
 
 int steer, motor;
 
@@ -52,12 +53,15 @@ void OpenMVcontrol() {
       int tempmotor = Serial1.parseInt();
         // look for the newline. That's the end of the commands
       if (Serial1.read() == '\n') {
+        steer=tempsteer;
+        motor=tempmotor;
+        if (RC_throttle) {
+            motor = pulseIn(RC2_pin, HIGH);
+        }
         Serial.print("Steer: ");
         Serial.print(tempsteer);
         Serial.print(" Motor: ");
         Serial.println(tempmotor);
-        steer=tempsteer;
-        motor=tempmotor;
         LEDState = !LEDState; // reverse the LED state
         digitalWrite(LED_BUILTIN, LEDState);   // turn on or off the LED to show activity
         myservoa.write(steer); // send values to output

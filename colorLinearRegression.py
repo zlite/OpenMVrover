@@ -20,12 +20,10 @@ uart = UART(3, 19200)  # Use UART 3 (pins 4 and 5). No need to go faster than th
 THRESHOLD = (0, 100, -35, 127, -128, -30) # blue threshold
 # THRESHOLD = (0, 100, 35, 127, -15, 127) # red threshold
 
-TARGET_POINTS = [(70, 60),   # (x, y) CHANGE ME!
-                 (285, 60),
+TARGET_POINTS = [(70, 50),   # (x, y), clockwise from top left
+                 (285, 50),
                  (319, 239),
                  (1,239)]
-
-
 
 
 cruise_speed = 1575 # how fast should the car drive, range from 1000 to 2000. 1500 is stopped. 1575 is slowest it can go
@@ -35,6 +33,7 @@ steering_center = 80  # set to your car servo's center point
 kp = 0.4   # P term of the PID
 ki = 0.0     # I term of the PID
 kd = 0.3     # D term of the PID
+RC_control = False  # Set to false if you're just benchtop testing
 
 red_led   = LED(1)
 green_led = LED(2)
@@ -121,10 +120,10 @@ sensor.set_auto_whitebal(False)
 while(True):
     clock.tick() # Track elapsed milliseconds between snapshots().
     switch = switch_pin.value() # get value, 0 or 1
-    if switch == 1:  # Teensy says you're in MV mode
+    if switch == 1 or  not RC_control:  # Teensy says you're in MV mode
         img = sensor.snapshot().lens_corr(strength = 1.8, zoom = 1)  # do lens correcton for fisheye
-        img = img.rotation_corr(corners = TARGET_POINTS)    # correct perspective to give top-down view
-        line = img.get_regression([THRESHOLD], robust = True)  # do linear regression for desired color
+ #       img = img.rotation_corr(corners = TARGET_POINTS)    # correct perspective to give top-down view
+        line = img.get_regression([THRESHOLD], robust = False)  # do linear regression for desired color
         if (line):
             img.draw_line(line.line(), color = 127)
             deflection_angle = -math.atan2(line.line()[1]-line.line()[3],line.line()[0]-line.line()[2])
@@ -147,7 +146,7 @@ while(True):
                         led_control(0) # turn off LED
                         led_state = False
                     else:
-                        led_control(2) # turn on LED
+                        led_control(2) # turn on Green LED
                         led_state = True
                     led_time = now   # reset time counter
 
@@ -157,6 +156,15 @@ while(True):
                 steer (steer_angle*-gain)
 #                print(steer_angle*-gain)
     else:
-        print(clock.fps())
-        time.sleep(0.01)
+        now = pyb.millis()
+        if  now > old_time + 1.0 :  # time has passed since last measurement
+            if now > led_time + 1000: # switch LED every second
+                print("Under RC control")
+                if led_state == True:
+                    led_control(0) # turn off LED
+                    led_state = False
+                else:
+                    led_control(4) # turn on Blue LED
+                    led_state = True
+                led_time = now   # reset time counter
 
