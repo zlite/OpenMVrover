@@ -26,12 +26,12 @@ kd = 0.4    # D term of the PID
 #              (30, 100, -64, -8, -32, 32), # generic_green_thresholds
 #              (0, 15, 0, 40, -80, -20)] # generic_blue_thresholds
 
-threshold_index = 1
+threshold_index = 2
 # 0 for red, 1 for green, 2 for blue
 
-thresholds = [(0, 100, -1, 127, -25, 127), # generic_red_thresholds
+thresholds = [(0, 100, 12, 127, 10, 127), # generic_red_thresholds
               (0, 100, -87, 18, -128, 33), # generic_green_thresholds
-              (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
+              (0, 100, -81, 127, -104, 10)] # generic_blue_thresholds
 # You may pass up to 16 thresholds above. However, it's not really possible to segment any
 # scene with 16 thresholds before color thresholds start to overlap heavily.
 
