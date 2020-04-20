@@ -35,6 +35,7 @@ void setup() {
 }
 
 void RCcontrol() {
+  Serial.println(RC3_value);  // print switch state for debugging
   digitalWrite(SwitchPin, LOW);
   RC1_value = pulseIn(RC1_pin, HIGH);  // read rc inputs
   RC2_value = pulseIn(RC2_pin, HIGH);
@@ -64,7 +65,10 @@ void OpenMVcontrol() {
         Serial.println(tempmotor);
         LEDState = !LEDState; // reverse the LED state
         digitalWrite(LED_BUILTIN, LEDState);   // turn on or off the LED to show activity
-        myservoa.write(steer); // send values to output
+        steer = steer + 1500; // steering servo neutral is PWM 1500
+        constrain(steer, 1000,2000);
+        constrain(motor,1000,2000);
+        myservoa.write(steer+1500); // send values to output
         myservob.write(motor);
         }
       }  
@@ -78,7 +82,6 @@ void loop() {
       digitalWrite(LED_BUILTIN, LEDState);   // turn on or off the LED
        }
   RC3_value = pulseIn(RC3_pin, HIGH);
-  Serial.println(RC3_value);  // print switch state for debugging
   if (RC3_value > 1500) {RCcontrol();}   // Use the CH5 switch to decide whether to pass through RC commands or take OpenMV commands
     else {OpenMVcontrol();}
 
