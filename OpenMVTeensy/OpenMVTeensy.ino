@@ -59,16 +59,16 @@ void OpenMVcontrol() {
         if (RC_throttle) {
             motor = pulseIn(RC2_pin, HIGH);
         }
+        LEDState = !LEDState; // reverse the LED state
+        digitalWrite(LED_BUILTIN, LEDState);   // turn on or off the LED to show activity
+        steer = steer + 1500; // steering servo neutral is PWM 1500
+        constrain(steer,1300,1700);
+        constrain(motor,1000,2000);
         Serial.print("Steer: ");
         Serial.print(tempsteer);
         Serial.print(" Motor: ");
         Serial.println(tempmotor);
-        LEDState = !LEDState; // reverse the LED state
-        digitalWrite(LED_BUILTIN, LEDState);   // turn on or off the LED to show activity
-        steer = steer + 1500; // steering servo neutral is PWM 1500
-        constrain(steer, 1000,2000);
-        constrain(motor,1000,2000);
-        myservoa.write(steer+1500); // send values to output
+        myservoa.write(steer); // send values to output
         myservob.write(motor);
         }
       }  
