@@ -9,12 +9,36 @@ import sensor, image, pyb, math, time
 from pyb import LED
 from pyb import Pin, Timer
 
+# these are motor driver pins, which set the direction of each motor
+pinADir0 = pyb.Pin('P0', pyb.Pin.OUT_PP, pyb.Pin.PULL_NONE)
+pinADir1 = pyb.Pin('P1', pyb.Pin.OUT_PP, pyb.Pin.PULL_NONE)
+pinBDir0 = pyb.Pin('P2', pyb.Pin.OUT_PP, pyb.Pin.PULL_NONE)
+pinBDir1 = pyb.Pin('P3', pyb.Pin.OUT_PP, pyb.Pin.PULL_NONE)
+
+
+# Dir0/1 must be not equal to each other for forward or backwards
+# operation. If they are equal then that's a brake operation.
+# If they are not equal then the motor will spin one way other the
+# other depending on its hookup and the value of channel 0.
+
+pinADir0.value(1)
+pinADir1.value(0)
+
+
+# Dir0/1 must be not equal to each other for forward or backwards
+# operation. If they are equal then that's a brake operation.
+# If they are not equal then the motor will spin one way other the
+# other depending on its hookup and the value of channel 0.
+
+pinBDir0.value(0)
+pinBDir1.value(1)
+
 tim = Timer(4, freq=1000) # Frequency in Hz
 
 cruise_speed = 60 # how fast should the car drive, range from 0 to 100
 steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
 steering_gain = 1.7  # calibration for your car's steering sensitivity
-steering_center = 60  # set to your car's steering center point
+steering_center = 30  # set to your car servo's center point
 kp = 0.8   # P term of the PID
 ki = 0.0     # I term of the PID
 kd = 0.4    # D term of the PID
@@ -26,12 +50,12 @@ kd = 0.4    # D term of the PID
 #              (30, 100, -64, -8, -32, 32), # generic_green_thresholds
 #              (0, 15, 0, 40, -80, -20)] # generic_blue_thresholds
 
-threshold_index = 2
+threshold_index = 0
 # 0 for red, 1 for green, 2 for blue
 
-thresholds = [(0, 100, 12, 127, 10, 127), # generic_red_thresholds
+thresholds = [(  0, 100,   36,  127,  -25,  127), # generic_red_thresholds
               (0, 100, -87, 18, -128, 33), # generic_green_thresholds
-              (0, 100, -81, 127, -104, 10)] # generic_blue_thresholds
+              (0, 100, -128, -10, -128, 51)] # generic_blue_thresholds
 # You may pass up to 16 thresholds above. However, it's not really possible to segment any
 # scene with 16 thresholds before color thresholds start to overlap heavily.
 
@@ -41,11 +65,13 @@ thresholds = [(0, 100, 12, 127, 10, 127), # generic_red_thresholds
 # to the roi near the bottom of the image and less to the next roi and so on.
 ROIS = [ # [ROI, weight]
         (38,1,90,38, 0.4),
-        (35,40,109,43,0.2),
-        (0,79,160,41,0.6)
+        (35,40,109,43,0.6),
+        (0,79,160,41,0.2)
        ]
 
 blue_led  = LED(3)
+
+
 
 
 old_error = 0
@@ -67,8 +93,8 @@ def constrain(value, min, max):
     else:
         return value
 
-ch1 = tim.channel(1, Timer.PWM, pin=Pin("P7"), pulse_width_percent=0)
-ch2 = tim.channel(2, Timer.PWM, pin=Pin("P8"), pulse_width_percent=0)
+ch1 = tim.channel(1, pyb.Timer.PWM, pin=pyb.Pin("P7"))
+ch2 = tim.channel(2, pyb.Timer.PWM, pin=pyb.Pin("P8"))
 
 def steer(angle):
     global steering_gain, cruise_speed, steering_center
