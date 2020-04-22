@@ -16,8 +16,11 @@ switch_pin = Pin('P7', Pin.IN, Pin.PULL_DOWN)
 
 uart = UART(3, 19200)  # Use UART 3 (pins 4 and 5)
 
-THRESHOLD = (10, 100, -128, 49, -128, -45) # blue threshold
-# THRESHOLD = (0, 100, 35, 127, -15, 127) # red threshold
+blue_threshold = (0, 100, -128, 127, -128, -35) # L A B
+
+binary_threshold = (57, 255)
+
+rois = [0,40,320,190]
 
 TARGET_POINTS = [(70, 50),   # (x, y), clockwise from top left
                  (285, 50),
@@ -27,8 +30,8 @@ TARGET_POINTS = [(70, 50),   # (x, y), clockwise from top left
 
 cruise_speed = 1575 # how fast should the car drive, range from 1000 (full backwards) to 2000 (full forwards). 1500 is stopped. 1575 is slowest it can go
 steering_direction = -1   # use this to revers the steering if your car goes in the wrong direction
-steering_gain = 70  # calibration for your car's steering sensitivity
-steering_center = 0  # set to your car servo's center point
+steering_gain = 30  # calibration for your car's steering sensitivity
+steering_center = -5   # set to your car servo's center point
 
 
 kp = 0.4   # P term of the PID
@@ -74,7 +77,7 @@ def constrain(value, min, max):
         return value
 
 def steer(angle):
-    angle = int(round((angle+steering_center)*steering_gain*steering_direction))
+    angle = int(round((angle+steering_center)*steering_gain))
     ch1 = str(angle)  # must convert to text to send via Serial
     ch2 = str(cruise_speed)  # send throttle data, too
     print("Steering command", angle)
@@ -116,24 +119,30 @@ sensor.set_auto_gain(False)   # now turn off autocalibration before we start col
 sensor.set_auto_whitebal(False)
 
 
-
 while(True):
     clock.tick() # Track elapsed milliseconds between snapshots().
     switch = switch_pin.value() # get value, 0 or 1
     if switch == 1 or  not RC_control:  # Teensy says you're in MV mode
-        img = sensor.snapshot().lens_corr(strength = 1.8, zoom = 1)  # do lens correcton for fisheye
- #       img = img.rotation_corr(corners = TARGET_POINTS)    # correct perspective to give top-down view
-        line = img.get_regression([THRESHOLD], robust = True)  # do linear regression for desired color
+        img = sensor.snapshot().lens_corr(strength = 2.8, zoom = 1)
+        img.binary([blue_threshold])
+        line = img.get_regression([binary_threshold],roi=rois, robust = False)  # do linear regression for desired color
         if (line):
             img.draw_line(line.line(), color = 127)
+            offset = line.line()[2]
+            constrain(offset,0,320)
+            offset = offset - 160
+            offset_angle = math.acos(offset/320)
+            offset_angle = math.degrees(offset_angle) - 90
             measured_angle = -math.atan2(line.line()[1]-line.line()[3],line.line()[0]-line.line()[2])
-
+            print(line.line())
             # Convert angle in radians to degrees.
             measured_angle = math.degrees(measured_angle)
             measured_angle = 90 - measured_angle # make straight ahead 0
-            measured_angle = constrain(measured_angle, -45, 45)
+            measured_angle = constrain(measured_angle, -90, 90)
+            net_angle = 2*offset_angle - measured_angle
+#            print("Offset Angle: ", offset_angle, "Measured Angle: ", measured_angle, "Net Angle: ", net_angle)
 
-            print("FPS %f" % clock.fps())
+ #           print("FPS %f" % clock.fps())
 
 
 
@@ -147,7 +156,7 @@ while(True):
                         led_control(2) # turn on Green LED
                         led_state = True
                     led_time = now   # reset time counter
-                steer_angle = update_pid(measured_angle)
+                steer_angle = update_pid(net_angle)
                 old_time = now
                 steer (steer_angle)
 
