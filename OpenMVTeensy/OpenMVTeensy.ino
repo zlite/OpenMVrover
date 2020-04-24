@@ -61,8 +61,7 @@ void OpenMVcontrol() {
         }
         LEDState = !LEDState; // reverse the LED state
         digitalWrite(LED_BUILTIN, LEDState);   // turn on or off the LED to show activity
-        steer = steer + 1500; // steering servo neutral is PWM 1500
-        constrain(steer,1300,1700);
+        constrain(steer,1370,1630);
         constrain(motor,1000,2000);
         Serial.print("Steer: ");
         Serial.print(tempsteer);
