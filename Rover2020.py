@@ -38,7 +38,7 @@ GRAYSCALE_THRESHOLDS = [(240, 255)] # White Line.
 COLOR_HIGH_LIGHT_THRESHOLDS = [(80, 100, -10, 10, -10, 10)]
 GRAYSCALE_HIGH_LIGHT_THRESHOLDS = [(250, 255)]
 BINARY_VIEW = False # Helps debugging but costs FPS if on.
-FRAME_SIZE = sensor.QVGA # Frame size.
+FRAME_SIZE = sensor.QQVGA # Frame size.
 FRAME_REGION = 0.75 # Percentage of the image from the bottom (0 - 1.0).
 FRAME_WIDE = 1.0 # Percentage of the frame width.
 
