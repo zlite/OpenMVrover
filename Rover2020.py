@@ -32,13 +32,19 @@ switch_pin = Pin('P7', Pin.IN, Pin.PULL_DOWN)
 COLOR_THRESHOLDS = [(0, 100, -128, 127, -128, -35)] # lights
 #COLOR_THRESHOLDS = (37, 100, -128, 8, -128, -29) # sunlight
 
+TARGET_POINTS = [(70, 30),   # (x, y) CHANGE ME!
+                 (250, 30),   # (x, y) CHANGE ME!
+                 (320, 179), # (x, y) CHANGE ME!
+                 (0, 179)] # (x, y) CHANGE ME!
+
+
 
 COLOR_LINE_FOLLOWING = True # False to use grayscale thresholds, true to use color thresholds.
 GRAYSCALE_THRESHOLDS = [(240, 255)] # White Line.
 COLOR_HIGH_LIGHT_THRESHOLDS = [(80, 100, -10, 10, -10, 10)]
 GRAYSCALE_HIGH_LIGHT_THRESHOLDS = [(250, 255)]
 BINARY_VIEW = False # Helps debugging but costs FPS if on.
-FRAME_SIZE = sensor.QQVGA # Frame size.
+FRAME_SIZE = sensor.QVGA # Frame size.
 FRAME_REGION = 0.75 # Percentage of the image from the bottom (0 - 1.0).
 FRAME_WIDE = 1.0 # Percentage of the frame width.
 
@@ -225,6 +231,7 @@ while True:
     switch = switch_pin.value() # get value, 0 or 1
     if switch == 1 or not RC_control:  # Teensy says you're in MV mode
         img = sensor.snapshot().lens_corr(strength = 2.8, zoom = 1)   # lens correction for fisheye lens
+        img.rotation_corr(corners = TARGET_POINTS)
         img.binary(COLOR_HIGH_LIGHT_THRESHOLDS if COLOR_LINE_FOLLOWING else GRAYSCALE_HIGH_LIGHT_THRESHOLDS, zero = True)
         img.histeq()
 
