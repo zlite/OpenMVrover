@@ -1,7 +1,7 @@
 import machine
 import time
-import sensor
-import image
+import csi
+import pyb
 
 # Pin definitions - Inputs
 CH1_PIN = "P0"  # Throttle input
@@ -11,6 +11,10 @@ CH3_PIN = "P9"  # Mode switch (manual/auto)
 # Pin definitions - Outputs
 CH1_OUT_PIN = "P8"  # Throttle output (always passthrough)
 CH2_OUT_PIN = "P7"  # Steering output (manual passthrough or auto)
+
+# N6 PWM output mapping for the selected output pins
+THROTTLE_TIMER_CHANNEL = 2  # P8 = TIM4 CH2
+STEERING_TIMER_CHANNEL = 1  # P7 = TIM4 CH1
 
 # Color threshold for blue lane markers
 COLOR_THRESHOLDS = [(0, 100, -100, 127, -128, -29)]
@@ -125,10 +129,10 @@ def find_lane_center(img):
     
     return None, sorted_blobs
 
-def steering_pwm_from_error(error, pid):
+def steering_pwm_from_error(error, image_width, pid):
     """Convert steering error to PWM value using PID"""
-    # error is in pixels, normalize to -1 to 1 range (assuming 320px width)
-    normalized_error = error / 160.0
+    # error is in pixels, normalize to -1 to 1 range using the active image width
+    normalized_error = error / (image_width / 2.0)
     
     # PID output is steering adjustment in microseconds
     adjustment = pid.update(normalized_error)
@@ -154,6 +158,13 @@ class ExponentialSmoothing:
             self.value = self.alpha * new_value + (1 - self.alpha) * self.value
         return int(self.value)
 
+def make_rc_timer(timer_id=4):
+    """Create a 50Hz timer where pulse_width values are in microseconds."""
+    timer = pyb.Timer(timer_id)
+    prescaler = (timer.source_freq() // 1000000) - 1
+    timer.init(prescaler=prescaler, period=19999)
+    return timer
+
 def main():
     print("Autonomous Lane Following System")
     print("CH1 (P0): Throttle - Always Manual")
@@ -162,17 +173,18 @@ def main():
     print("-" * 50)
     
     # Initialize LED for heartbeat (1Hz blink)
-    led = machine.Pin("LED_RED", machine.Pin.OUT)
+    led = machine.LED("LED_RED")
     led_state = False
     last_led_toggle = time.ticks_ms()
     
     # Initialize camera
-    sensor.reset()
-    sensor.set_pixformat(sensor.RGB565)
-    sensor.set_framesize(sensor.QVGA)  # 320x240
-    sensor.skip_frames(time=2000)
-    sensor.set_auto_gain(False)
-    sensor.set_auto_whitebal(False)
+    cam = csi.CSI()
+    cam.reset()
+    cam.pixformat(csi.RGB565)
+    cam.framesize(csi.QVGA)  # 320x240
+    cam.snapshot(time=2000)
+    cam.auto_gain(False)
+    cam.auto_whitebal(False)
     
     # Initialize PWM readers
     ch1 = PWMReader(CH1_PIN)  # Throttle
@@ -185,8 +197,19 @@ def main():
     ch3_smoother = ExponentialSmoothing(alpha=0.2)
     
     # Initialize PWM outputs (50Hz for RC servos)
-    pwm_throttle = machine.PWM(CH1_OUT_PIN, freq=50)
-    pwm_steering = machine.PWM(CH2_OUT_PIN, freq=50)
+    rc_timer = make_rc_timer()
+    pwm_throttle = rc_timer.channel(
+        THROTTLE_TIMER_CHANNEL,
+        pyb.Timer.PWM,
+        pin=machine.Pin(CH1_OUT_PIN),
+        pulse_width=1500,
+    )
+    pwm_steering = rc_timer.channel(
+        STEERING_TIMER_CHANNEL,
+        pyb.Timer.PWM,
+        pin=machine.Pin(CH2_OUT_PIN),
+        pulse_width=1500,
+    )
     
     # Initialize PID controller for steering
     # PID gains: kp, ki, kd, output_min, output_max (in microseconds)
@@ -212,7 +235,7 @@ def main():
             last_led_toggle = loop_start
         
         # Capture image
-        img = sensor.snapshot()
+        img = cam.snapshot()
         
         # Read and smooth RC inputs
         throttle_raw = ch1.get_pulse_width()
@@ -234,7 +257,7 @@ def main():
         # Throttle is always passthrough (with smoothing)
         if throttle_in > 0:
             throttle_out = throttle_smoother.update(throttle_in)
-            pwm_throttle.duty_ns(throttle_out * 1000)
+            pwm_throttle.pulse_width(throttle_out)
         else:
             throttle_out = 0
         
@@ -250,9 +273,9 @@ def main():
                     error = lane_center_x - image_center
                     
                     # Get steering PWM from PID controller
-                    steering_pwm = steering_pwm_from_error(error, pid=steering_pid)
+                    steering_pwm = steering_pwm_from_error(error, img.width(), pid=steering_pid)
                     steering_out = steering_smoother.update(steering_pwm)
-                    pwm_steering.duty_ns(steering_out * 1000)
+                    pwm_steering.pulse_width(steering_out)
                     
                     # Display info on image
                     img.draw_string(10, 10, f"AUTO - Error: {error}px", color=(255, 255, 0))
@@ -260,19 +283,19 @@ def main():
                 else:
                     # No lanes detected - hold center
                     steering_out = steering_smoother.update(1500)
-                    pwm_steering.duty_ns(steering_out * 1000)
+                    pwm_steering.pulse_width(steering_out)
                     img.draw_string(10, 10, "AUTO - NO LANES!", color=(255, 0, 0))
             except Exception as e:
                 print(f"ERROR in auto mode: {e}")
                 # Failsafe - center steering
                 steering_out = 1500
-                pwm_steering.duty_ns(steering_out * 1000)
+                pwm_steering.pulse_width(steering_out)
                 img.draw_string(10, 10, "AUTO - ERROR!", color=(255, 0, 0))
         else:
             # Manual mode - passthrough RC steering
             if steering_in > 0:
                 steering_out = steering_smoother.update(steering_in)
-                pwm_steering.duty_ns(steering_out * 1000)
+                pwm_steering.pulse_width(steering_out)
             img.draw_string(10, 10, "MANUAL MODE", color=(0, 255, 0))
         
         # Display mode and inputs on image
