@@ -17,7 +17,7 @@ THROTTLE_TIMER_CHANNEL = 2  # P8 = TIM4 CH2
 STEERING_TIMER_CHANNEL = 1  # P7 = TIM4 CH1
 
 # Color threshold for blue lane markers
-COLOR_THRESHOLDS = [(0, 100, -100, 127, -128, -29)]
+COLOR_THRESHOLDS = [(61, 76, -85, 3, -128, -6)]
 
 # Mode threshold - above 1600us = auto mode, below = manual
 MODE_THRESHOLD = 1600
@@ -221,6 +221,7 @@ def main():
     
     # Give interrupts time to stabilize
     time.sleep_ms(100)
+    fps = 0.0
     
     while True:
         loop_start = time.ticks_ms()
@@ -253,6 +254,7 @@ def main():
         # Variables to track actual outputs
         throttle_out = throttle_in
         steering_out = steering_in
+        lane_center_x, blobs = find_lane_center(img)
         
         # Throttle is always passthrough (with smoothing)
         if throttle_in > 0:
@@ -264,9 +266,6 @@ def main():
         # Steering logic
         if auto_mode:
             try:
-                # Auto mode - use camera for steering
-                lane_center_x, blobs = find_lane_center(img)
-                
                 if lane_center_x is not None:
                     # Calculate error (desired center is at img.width()//2)
                     image_center = img.width() // 2
@@ -304,10 +303,15 @@ def main():
         
         # Calculate loop time for debugging
         loop_time = time.ticks_diff(time.ticks_ms(), loop_start)
+        if loop_time > 0:
+            fps = 1000.0 / loop_time
+        largest_blob_area = 0
+        for blob in blobs:
+            largest_blob_area = max(largest_blob_area, blob.area())
         
-        # Print to serial: inputs, outputs, and timing
+        # Print to serial: inputs, outputs, and FPS
         mode_str = "auto" if auto_mode else "manual"
-        print(f"IN - Thr:{throttle_in:4d} Str:{steering_in:4d} Mode:{mode_in:4d} | OUT - Thr:{throttle_out:4d} Str:{steering_out:4d} Mode:{mode_str} | Loop:{loop_time}ms")
+        print(f"IN - Thr:{throttle_in:4d} Str:{steering_in:4d} Mode:{mode_in:4d} | OUT - Thr:{throttle_out:4d} Str:{steering_out:4d} Mode:{mode_str} | Blobs:{len(blobs):2d} MaxArea:{largest_blob_area:4d} FPS:{fps:.1f}")
 
 if __name__ == "__main__":
     main()
