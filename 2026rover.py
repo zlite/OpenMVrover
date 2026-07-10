@@ -1,7 +1,7 @@
 import machine
 import time
 import csi
-import pyb
+import protocol
 import network
 import socket
 import os
@@ -14,10 +14,6 @@ CH3_PIN = "P9"  # Mode switch (manual/auto)
 # Pin definitions - Outputs
 CH1_OUT_PIN = "P8"  # Throttle output (always passthrough)
 CH2_OUT_PIN = "P7"  # Steering output (manual passthrough or auto)
-
-# N6 PWM output mapping for the selected output pins
-THROTTLE_TIMER_CHANNEL = 2  # P8 = TIM4 CH2
-STEERING_TIMER_CHANNEL = 1  # P7 = TIM4 CH1
 
 # Color threshold for blue lane markers
 COLOR_THRESHOLDS = [(10, 84, -55, 45, -128, -8)]
@@ -52,6 +48,9 @@ LANE_CENTERLINE_THICKNESS = 3
 
 # Race behavior/tuning
 LOOKAHEAD_Y_PERCENT = 70
+LOOKAHEAD_Y_FAST_PERCENT = 55
+HEADING_GAIN = 0.65
+CURVE_FEEDFORWARD_GAIN = 0.20
 LANE_CENTER_SMOOTHING = 0.35
 AUTO_THROTTLE_ENABLED = True
 THROTTLE_NEUTRAL = 1500
@@ -77,6 +76,9 @@ WIFI_STATUS_INTERVAL_MS = 250
 
 CONFIG_FIELDS = (
     "LOOKAHEAD_Y_PERCENT",
+    "LOOKAHEAD_Y_FAST_PERCENT",
+    "HEADING_GAIN",
+    "CURVE_FEEDFORWARD_GAIN",
     "LANE_CENTER_SMOOTHING",
     "AUTO_THROTTLE_ENABLED",
     "AUTO_THROTTLE_MAX",
@@ -107,6 +109,16 @@ class PID:
         self.output_max = output_max
         self.prev_error = 0
         self.integral = 0
+        self.filtered_derivative = 0
+        self.derivative_alpha = 0.25
+        self.has_previous_error = False
+        self.last_time = time.ticks_ms()
+
+    def reset(self):
+        self.prev_error = 0
+        self.integral = 0
+        self.filtered_derivative = 0
+        self.has_previous_error = False
         self.last_time = time.ticks_ms()
     
     def update(self, error):
@@ -125,13 +137,18 @@ class PID:
         i_term = self.ki * self.integral
         
         # Derivative term
-        d_term = self.kd * (error - self.prev_error) / dt
+        raw_derivative = (error - self.prev_error) / dt if self.has_previous_error else 0
+        self.filtered_derivative += self.derivative_alpha * (
+            raw_derivative - self.filtered_derivative
+        )
+        d_term = self.kd * self.filtered_derivative
         
         # Calculate output
         output = p_term + i_term + d_term
         output = max(min(output, self.output_max), self.output_min)
         
         self.prev_error = error
+        self.has_previous_error = True
         self.last_time = current_time
         
         return output
@@ -301,16 +318,18 @@ def draw_lane_model(img, left_points, right_points, draw_overlay, config=None):
         
         if right_x - left_x >= LANE_FILL_MIN_SEPARATION:
             if draw_overlay and config_value(config, "DRAW_LANE_FILL"):
-                img.draw_line(left_x, y, right_x, y, color=LANE_FILL_COLOR)
+                img.draw_line((left_x, y, right_x, y), color=LANE_FILL_COLOR)
             center_points.append(((left_x + right_x) // 2, y))
     
     if draw_overlay and config_value(config, "DRAW_LANE_CENTERLINE"):
         for i in range(1, len(center_points)):
             img.draw_line(
-                center_points[i - 1][0],
-                center_points[i - 1][1],
-                center_points[i][0],
-                center_points[i][1],
+                (
+                    center_points[i - 1][0],
+                    center_points[i - 1][1],
+                    center_points[i][0],
+                    center_points[i][1],
+                ),
                 color=LANE_CENTERLINE_COLOR,
                 thickness=LANE_CENTERLINE_THICKNESS,
             )
@@ -381,7 +400,32 @@ def estimate_curve(center_points):
     far_x = center_points[0][0]
     return near_x - far_x
 
-def find_lane_center(img, draw_overlay=True, config=None):
+def dynamic_lookahead_percent(throttle_us, config=None):
+    """Look farther up the track as speed demand increases."""
+    slow = config_value(config, "LOOKAHEAD_Y_PERCENT")
+    fast = config_value(config, "LOOKAHEAD_Y_FAST_PERCENT")
+    if throttle_us <= THROTTLE_NEUTRAL:
+        return slow
+    throttle_max = config_value(config, "AUTO_THROTTLE_MAX")
+    speed_ratio = min(1.0, (throttle_us - THROTTLE_NEUTRAL) / max(1, throttle_max - THROTTLE_NEUTRAL))
+    return int(slow + ((fast - slow) * speed_ratio))
+
+def path_tracking_error(img, center_points, lookahead_x, config=None):
+    """Combine cross-track, heading, and curvature into one pixel error."""
+    image_center = img.width() / 2.0
+    cross_track = lookahead_x - image_center
+    if len(center_points) < 2:
+        return cross_track, 0.0
+
+    near_x = center_points[-1][0]
+    heading_error = lookahead_x - near_x
+    curve_error = center_points[0][0] - near_x
+    combined = cross_track
+    combined += config_value(config, "HEADING_GAIN") * heading_error
+    combined += config_value(config, "CURVE_FEEDFORWARD_GAIN") * curve_error
+    return combined, heading_error
+
+def find_lane_center(img, draw_overlay=True, config=None, lookahead_percent=None):
     """Find lane markers and calculate center position"""
     roi = lane_roi(img, config)
     left_points, right_points = sample_lane_points(img, config)
@@ -404,7 +448,9 @@ def find_lane_center(img, draw_overlay=True, config=None):
     sorted_blobs = sorted(blobs, key=blob_center_x) if blobs else []
     confidence, lane_width = estimate_lane_confidence(img, sorted_blobs, left_points, right_points, center_points, config)
     curve = estimate_curve(center_points)
-    target_y = (img.height() * config_value(config, "LOOKAHEAD_Y_PERCENT")) // 100
+    if lookahead_percent is None:
+        lookahead_percent = config_value(config, "LOOKAHEAD_Y_PERCENT")
+    target_y = (img.height() * lookahead_percent) // 100
     lookahead_point = nearest_center_point(center_points, target_y)
     lane_info = {
         "center_points": center_points,
@@ -419,7 +465,7 @@ def find_lane_center(img, draw_overlay=True, config=None):
     if draw_overlay and DRAW_BLOB_DEBUG:
         for blob in sorted_blobs:
             img.draw_rectangle(blob.rect(), color=(255, 0, 0))
-            img.draw_cross(blob.cx(), blob.cy(), color=(0, 255, 0))
+            img.draw_cross((blob.cx(), blob.cy()), color=(0, 255, 0))
     
     # Prefer the bottom lane-fill slices for steering because they follow curves.
     if lookahead_point:
@@ -437,10 +483,7 @@ def find_lane_center(img, draw_overlay=True, config=None):
         # Draw center line
         if draw_overlay:
             img.draw_line(
-                lane_center_x,
-                0,
-                lane_center_x,
-                img.height(),
+                (lane_center_x, 0, lane_center_x, img.height()),
                 color=LANE_CENTERLINE_COLOR,
                 thickness=LANE_CENTERLINE_THICKNESS,
             )
@@ -566,6 +609,13 @@ def config_value(config, name):
         return globals()[name]
     return config.get(name, globals()[name])
 
+def host_connected():
+    """Return whether OpenMV IDE/Protocol V2 has an active host connection."""
+    try:
+        return protocol.is_active()
+    except Exception:
+        return False
+
 def bool_text(value):
     return "true" if value else "false"
 
@@ -620,12 +670,20 @@ class ExponentialSmoothing:
             self.value = self.alpha * new_value + (1 - self.alpha) * self.value
         return int(self.value)
 
-def make_rc_timer(timer_id=4):
-    """Create a 50Hz timer where pulse_width values are in microseconds."""
-    timer = pyb.Timer(timer_id)
-    prescaler = (timer.source_freq() // 1000000) - 1
-    timer.init(prescaler=prescaler, period=19999)
-    return timer
+class ServoPWM:
+    """Firmware 5.0/N6 servo PWM using the portable machine API."""
+    def __init__(self, pin_name, initial_us=1500):
+        self.pwm = machine.PWM(
+            machine.Pin(pin_name),
+            freq=50,
+            duty_ns=int(initial_us * 1000),
+        )
+
+    def pulse_width(self, pulse_us):
+        self.pwm.duty_ns(int(pulse_us * 1000))
+
+    def deinit(self):
+        self.pwm.deinit()
 
 def wlan_station_id():
     try:
@@ -760,6 +818,9 @@ def send_calibration_page(client, config):
         "<p>Save status: " + str(config.get("_save_message", "")) + "</p>"
         "<form action='/set' method='get'>"
         + calibration_field("LOOKAHEAD_Y_PERCENT", "Lookahead Y %", config["LOOKAHEAD_Y_PERCENT"])
+        + calibration_field("LOOKAHEAD_Y_FAST_PERCENT", "Fast lookahead Y %", config["LOOKAHEAD_Y_FAST_PERCENT"])
+        + calibration_field("HEADING_GAIN", "Heading gain", config["HEADING_GAIN"], step="0.05")
+        + calibration_field("CURVE_FEEDFORWARD_GAIN", "Curve feed-forward", config["CURVE_FEEDFORWARD_GAIN"], step="0.05")
         + calibration_field("LANE_CENTER_SMOOTHING", "Lane center smoothing", config["LANE_CENTER_SMOOTHING"], step="0.05")
         + calibration_field("AUTO_THROTTLE_ENABLED", "Auto throttle", config["AUTO_THROTTLE_ENABLED"])
         + calibration_field("AUTO_THROTTLE_MAX", "Auto throttle max", config["AUTO_THROTTLE_MAX"])
@@ -887,8 +948,7 @@ def main():
     led = machine.LED("LED_RED")
     led_state = False
     last_led_toggle = time.ticks_ms()
-    usb = pyb.USB_VCP()
-    usb_connected = usb.isconnected()
+    usb_connected = host_connected()
     last_usb_check = time.ticks_ms()
     
     # Initialize camera
@@ -910,20 +970,9 @@ def main():
     ch2_smoother = ExponentialSmoothing(alpha=0.2)
     ch3_smoother = ExponentialSmoothing(alpha=0.2)
     
-    # Initialize PWM outputs (50Hz for RC servos)
-    rc_timer = make_rc_timer()
-    pwm_throttle = rc_timer.channel(
-        THROTTLE_TIMER_CHANNEL,
-        pyb.Timer.PWM,
-        pin=machine.Pin(CH1_OUT_PIN),
-        pulse_width=1500,
-    )
-    pwm_steering = rc_timer.channel(
-        STEERING_TIMER_CHANNEL,
-        pyb.Timer.PWM,
-        pin=machine.Pin(CH2_OUT_PIN),
-        pulse_width=1500,
-    )
+    # Initialize firmware 5.0 PWM outputs (50Hz for RC servos).
+    pwm_throttle = ServoPWM(CH1_OUT_PIN)
+    pwm_steering = ServoPWM(CH2_OUT_PIN)
     
     # Initialize PID controller for steering
     # PID gains: kp, ki, kd, output_min, output_max (in microseconds)
@@ -944,6 +993,7 @@ def main():
     max_fps = 0.0
     lane_lost_count = 0
     lane_was_detected = False
+    auto_was_enabled = False
     last_lane_seen_ms = time.ticks_ms()
     last_auto_steering = 1500
     
@@ -962,7 +1012,7 @@ def main():
                 last_led_toggle = loop_start
             
             if time.ticks_diff(loop_start, last_usb_check) >= USB_CHECK_INTERVAL_MS:
-                usb_connected = usb.isconnected()
+                usb_connected = host_connected()
                 last_usb_check = loop_start
             
             overlay_enabled = usb_connected or not config_value(config, "DRAW_OVERLAYS_ONLY_WHEN_USB_CONNECTED")
@@ -988,13 +1038,22 @@ def main():
             throttle_out = throttle_in
             steering_out = steering_in
             lane_center_smoother.alpha = config_value(config, "LANE_CENTER_SMOOTHING")
-            lane_center_x, blobs, lane_info = find_lane_center(img, draw_overlay=overlay_enabled, config=config)
+            lookahead_percent = dynamic_lookahead_percent(throttle_in, config)
+            lane_center_x, blobs, lane_info = find_lane_center(
+                img,
+                draw_overlay=overlay_enabled,
+                config=config,
+                lookahead_percent=lookahead_percent,
+            )
             image_center = img.width() // 2
             lane_error = 0
+            heading_error = 0
             lane_detected = lane_center_x is not None
             if lane_detected:
                 lane_center_x = lane_center_smoother.update(lane_center_x)
-                lane_error = lane_center_x - image_center
+                lane_error, heading_error = path_tracking_error(
+                    img, lane_info.get("center_points", []), lane_center_x, config
+                )
                 last_lane_seen_ms = loop_start
                 if not lane_was_detected:
                     lane_was_detected = True
@@ -1019,6 +1078,9 @@ def main():
             
             # Steering logic
             if auto_mode:
+                if not auto_was_enabled:
+                    steering_pid.reset()
+                auto_was_enabled = True
                 try:
                     if lane_detected:
                         # Get steering PWM from PID controller
@@ -1028,33 +1090,37 @@ def main():
                         last_auto_steering = steering_out
                         
                         if overlay_enabled:
-                            img.draw_string(10, 10, f"AUTO - Error: {lane_error}px", color=(255, 255, 0))
-                            img.draw_string(10, 25, f"Steer: {steering_out}us", color=(255, 255, 0))
+                            img.draw_string((10, 10), f"AUTO - Error: {lane_error}px", color=(255, 255, 0))
+                            img.draw_string((10, 25), f"Steer: {steering_out}us", color=(255, 255, 0))
                     elif lane_missing_ms < config_value(config, "LANE_HOLD_LAST_MS"):
                         steering_out = last_auto_steering
                         pwm_steering.pulse_width(steering_out)
                         if overlay_enabled:
-                            img.draw_string(10, 10, "AUTO - HOLD LAST", color=(255, 128, 0))
+                            img.draw_string((10, 10), "AUTO - HOLD LAST", color=(255, 128, 0))
                     else:
                         # No lanes detected - slow down and then center steering
+                        steering_pid.reset()
                         steering_out = steering_smoother.update(1500)
                         pwm_steering.pulse_width(steering_out)
                         if overlay_enabled:
-                            img.draw_string(10, 10, "AUTO - NO LANES!", color=(255, 0, 0))
+                            img.draw_string((10, 10), "AUTO - NO LANES!", color=(255, 0, 0))
                 except Exception as e:
                     print(f"ERROR in auto mode: {e}")
                     # Failsafe - center steering
                     steering_out = 1500
                     pwm_steering.pulse_width(steering_out)
                     if overlay_enabled:
-                        img.draw_string(10, 10, "AUTO - ERROR!", color=(255, 0, 0))
+                        img.draw_string((10, 10), "AUTO - ERROR!", color=(255, 0, 0))
             else:
+                if auto_was_enabled:
+                    steering_pid.reset()
+                auto_was_enabled = False
                 # Manual mode - passthrough RC steering
                 if steering_in > 0:
                     steering_out = steering_smoother.update(steering_in)
                     pwm_steering.pulse_width(steering_out)
                 if overlay_enabled:
-                    img.draw_string(10, 10, "MANUAL MODE", color=(0, 255, 0))
+                    img.draw_string((10, 10), "MANUAL MODE", color=(0, 255, 0))
             
             if auto_mode:
                 if lane_detected:
@@ -1087,14 +1153,14 @@ def main():
                 f"Mode: {mode_str}  AutoSwitch:{mode_in:4d}  Threshold:{MODE_THRESHOLD}\n"
                 f"Throttle In/Out: {throttle_in:4d} / {throttle_out:4d} us\n"
                 f"Steering In/Out: {steering_in:4d} / {steering_out:4d} us\n"
-                f"Lane Detected: {lane_detected}  CenterX:{lane_center_text}  Error:{lane_error:+4d} px\n"
+                f"Lane Detected: {lane_detected}  CenterX:{lane_center_text}  Error:{lane_error:+7.1f} px  Heading:{heading_error:+6.1f} px\n"
                 f"Confidence:{lane_confidence:.2f}  Curve:{lane_curve:+4d} px  Width:{lane_width:4d} px\n"
                 f"Samples:{lane_samples}/{lane_expected_samples}  Lost Count:{lane_lost_count}  Missing:{lane_missing_ms} ms\n"
                 f"Image CenterX: {image_center:4d}  Width:{img.width()}  Height:{img.height()}\n"
                 f"Blobs: {len(blobs):2d}  Largest Area:{largest_blob_area:5d}\n"
                 f"FPS: {fps:.1f}  Min:{min_fps:.1f}  Max:{max_fps:.1f}  Loop:{loop_time} ms  Frame:{frame_count}\n"
                 f"AutoThrottle:{config_value(config, 'AUTO_THROTTLE_ENABLED')}  Max:{config_value(config, 'AUTO_THROTTLE_MAX')}  Neutral:{THROTTLE_NEUTRAL}\n"
-                f"Lookahead:{config_value(config, 'LOOKAHEAD_Y_PERCENT')}%  CenterSmoothing:{config_value(config, 'LANE_CENTER_SMOOTHING'):.2f}\n"
+                f"Lookahead:{lookahead_percent}%  CenterSmoothing:{config_value(config, 'LANE_CENTER_SMOOTHING'):.2f}\n"
                 f"TopDown:{config_value(config, 'USE_TOP_DOWN_VIEW')}  ROI Top:{config_value(config, 'LANE_ROI_TOP_PERCENT')}%  Fill:{config_value(config, 'DRAW_LANE_FILL')}\n"
                 f"USB Connected:{usb_connected}  Overlay Drawing:{overlay_enabled}\n"
                 f"Config Saved:{config.get('_saved', False)}\n"
@@ -1102,8 +1168,8 @@ def main():
             )
             
             if overlay_enabled:
-                img.draw_string(10, 40, f"Thr: {throttle_in} Str: {steering_in}", color=(255, 255, 255))
-                img.draw_string(10, 55, f"Mode: {mode_in}", color=(255, 255, 255))
+                img.draw_string((10, 40), f"Thr: {throttle_in} Str: {steering_in}", color=(255, 255, 255))
+                img.draw_string((10, 55), f"Mode: {mode_in}", color=(255, 255, 255))
             update_wifi_status(wifi_stream, status_text, config, usb_connected=usb_connected)
             
             if usb_connected and frame_count % SERIAL_PRINT_INTERVAL == 0:
@@ -1112,6 +1178,8 @@ def main():
         ch1.deinit()
         ch2.deinit()
         ch3.deinit()
+        pwm_throttle.deinit()
+        pwm_steering.deinit()
         stop_wifi_stream(wifi_stream)
 
 if __name__ == "__main__":
