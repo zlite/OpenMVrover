@@ -1,25 +1,28 @@
 import machine
 import time
 import csi
-import protocol
 import network
 import socket
 import os
+import sys
+import gc
 
 # Pin definitions - Inputs
-CH1_PIN = "P0"  # Throttle input
-CH2_PIN = "P3"  # Steering input
-CH3_PIN = "P9"  # Mode switch (manual/auto)
+CH1_PIN = "P8"  # Steering input
+CH2_PIN = "P9"  # Throttle input
+CH3_PIN = "P6"  # Mode switch via servo-shield AIN
 
 # Pin definitions - Outputs
-CH1_OUT_PIN = "P8"  # Throttle output (always passthrough)
-CH2_OUT_PIN = "P7"  # Steering output (manual passthrough or auto)
+CH1_OUT_PIN = "P7"   # Throttle output (always passthrough)
+CH2_OUT_PIN = "P10"  # Steering output (manual passthrough or auto)
 
 # Color threshold for blue lane markers
 COLOR_THRESHOLDS = [(10, 84, -55, 45, -128, -8)]
 
 # Vision performance/tuning
-USE_TOP_DOWN_VIEW = True
+# rotation_corr(corners=...) hard-faults the N6 on firmware 5.0.
+TOP_DOWN_TRANSFORM_SUPPORTED = False
+USE_TOP_DOWN_VIEW = False
 TOP_DOWN_CORNERS = [
     (115, 80),   # top-left of the lane area in the camera image
     (205, 80),   # top-right
@@ -67,12 +70,38 @@ MODE_THRESHOLD = 1600
 
 # WiFi status page
 WIFI_STREAM_ENABLED = True
+WIFI_HTTP_SERVER_ENABLED = True
 WIFI_SSID = "AndersonHub"
 WIFI_PASSWORD = "momrules"
 WIFI_STREAM_PORT = 8080
 WIFI_CONNECT_TIMEOUT_MS = 15000
 WIFI_CLIENT_TIMEOUT_SEC = 5
 WIFI_STATUS_INTERVAL_MS = 250
+WIFI_VIDEO_INTERVAL_MS = 200
+WIFI_JPEG_QUALITY = 65
+DEBUG_SERIAL = False
+DEBUG_FIRST_FRAMES = 3
+DEBUG_FRAME_INTERVAL = 50
+RC_INPUTS_ENABLED = True
+SERVO_OUTPUTS_ENABLED = True
+RC_SERIAL_MONITOR_ENABLED = True
+RC_SERIAL_MONITOR_INTERVAL_MS = 200
+STEERING_OUTPUT_REVERSED = True
+STEERING_INPUT_SMOOTHING = 0.5
+STEERING_OUTPUT_SMOOTHING = 0.4
+
+def debug_checkpoint(label, frame=None):
+    """Print a compact checkpoint; the last line identifies a hard-fault stage."""
+    if not DEBUG_SERIAL:
+        return
+    try:
+        free = gc.mem_free()
+    except Exception:
+        free = -1
+    if frame is None:
+        print("DBG", time.ticks_ms(), label, "free=", free)
+    else:
+        print("DBG", time.ticks_ms(), "frame=", frame, label, "free=", free)
 
 CONFIG_FIELDS = (
     "LOOKAHEAD_Y_PERCENT",
@@ -120,37 +149,37 @@ class PID:
         self.filtered_derivative = 0
         self.has_previous_error = False
         self.last_time = time.ticks_ms()
-    
+
     def update(self, error):
         current_time = time.ticks_ms()
         dt = time.ticks_diff(current_time, self.last_time) / 1000.0  # Convert to seconds
-        
+
         if dt <= 0:
             dt = 0.01
-        
+
         # Proportional term
         p_term = self.kp * error
-        
+
         # Integral term with windup protection
         self.integral += error * dt
         self.integral = max(min(self.integral, 100), -100)
         i_term = self.ki * self.integral
-        
+
         # Derivative term
         raw_derivative = (error - self.prev_error) / dt if self.has_previous_error else 0
         self.filtered_derivative += self.derivative_alpha * (
             raw_derivative - self.filtered_derivative
         )
         d_term = self.kd * self.filtered_derivative
-        
+
         # Calculate output
         output = p_term + i_term + d_term
         output = max(min(output, self.output_max), self.output_min)
-        
+
         self.prev_error = error
         self.has_previous_error = True
         self.last_time = current_time
-        
+
         return output
 
 class PWMReader:
@@ -158,17 +187,30 @@ class PWMReader:
         self.pin = machine.Pin(pin_name, machine.Pin.IN)
         self.pulse_start = 0
         self.pulse_width = 0
+        self.last_measured_us = 0
+        self.edge_count = 0
         self.last_value = 0
-        
+
         # Set up interrupt for both rising and falling edges
-        self.pin.irq(trigger=machine.Pin.IRQ_RISING | machine.Pin.IRQ_FALLING, 
-                     handler=self._irq_handler)
-    
+        try:
+            self.pin.irq(
+                trigger=machine.Pin.IRQ_RISING | machine.Pin.IRQ_FALLING,
+                handler=self._irq_handler,
+                hard=True,
+            )
+        except TypeError:
+            # Compatibility fallback for ports without the hard keyword.
+            self.pin.irq(
+                trigger=machine.Pin.IRQ_RISING | machine.Pin.IRQ_FALLING,
+                handler=self._irq_handler,
+            )
+
     def _irq_handler(self, pin):
         """Interrupt handler called on rising and falling edges"""
         current_time = time.ticks_us()
         current_value = pin.value()
-        
+        self.edge_count += 1
+
         if current_value == 1 and self.last_value == 0:
             # Rising edge - start of pulse
             self.pulse_start = current_time
@@ -176,15 +218,19 @@ class PWMReader:
             # Falling edge - end of pulse
             if self.pulse_start > 0:
                 pw = time.ticks_diff(current_time, self.pulse_start)
+                self.last_measured_us = pw
                 # Only accept valid RC PWM range (800-2200 μs)
                 if 800 < pw < 2200:
                     self.pulse_width = pw
-        
+
         self.last_value = current_value
-    
+
     def get_pulse_width(self):
         """Get the most recent pulse width measurement"""
         return self.pulse_width
+
+    def diagnostics(self):
+        return (self.pin.value(), self.edge_count, self.last_measured_us)
 
     def deinit(self):
         """Disable pin interrupts before shutdown."""
@@ -192,6 +238,17 @@ class PWMReader:
             self.pin.irq(handler=None)
         except Exception:
             pass
+
+class DisabledPWMReader:
+    """No-op reader for isolating GPIO IRQ and WiFi interactions."""
+    def get_pulse_width(self):
+        return 0
+
+    def deinit(self):
+        pass
+
+    def diagnostics(self):
+        return (0, 0, 0)
 
 def lane_roi(img, config=None):
     """Return the lower image area where lane markers are expected."""
@@ -201,6 +258,8 @@ def lane_roi(img, config=None):
 
 def apply_top_down_view(img, config=None):
     """Apply a calibrated bird's-eye transform when enabled."""
+    if not TOP_DOWN_TRANSFORM_SUPPORTED:
+        return img
     use_top_down = USE_TOP_DOWN_VIEW if config is None else config_value(config, "USE_TOP_DOWN_VIEW")
     if not use_top_down:
         return img
@@ -211,8 +270,13 @@ def apply_top_down_view(img, config=None):
         print(f"ERROR in top-down transform: {e}")
         return img
 
+def blob_value(blob, name):
+    """Read firmware-5 attr fields while retaining older blob compatibility."""
+    value = getattr(blob, name)
+    return value() if callable(value) else value
+
 def blob_center_x(blob):
-    return blob.cx()
+    return blob_value(blob, "cx")
 
 def sample_lane_points(img, config=None):
     """Sample left/right lane marker positions at fixed distance rows."""
@@ -222,7 +286,7 @@ def sample_lane_points(img, config=None):
     left_points = []
     right_points = []
     y = roi_y + (sample_band_height // 2)
-    
+
     while y < roi_y + roi_h:
         band_y = max(roi_y, y - (sample_band_height // 2))
         band_h = min(sample_band_height, roi_y + roi_h - band_y)
@@ -239,30 +303,30 @@ def sample_lane_points(img, config=None):
         except Exception as e:
             print(f"ERROR in sample_lane_points: {e}")
             return left_points, right_points
-        
+
         if band_blobs and len(band_blobs) >= 2:
             sorted_band_blobs = sorted(band_blobs, key=blob_center_x)
             left_blob = sorted_band_blobs[0]
             right_blob = sorted_band_blobs[-1]
-            left_rect = left_blob.rect()
-            right_rect = right_blob.rect()
+            left_rect = blob_value(left_blob, "rect")
+            right_rect = blob_value(right_blob, "rect")
             left_inner_x = left_rect[0] + left_rect[2]
             right_inner_x = right_rect[0]
-            
+
             if right_inner_x - left_inner_x >= LANE_FILL_MIN_SEPARATION:
                 # Use the inner edges of each lane marker, not their centers.
                 left_points.append((left_inner_x, y))
                 right_points.append((right_inner_x, y))
-        
+
         y += sample_spacing
-    
+
     return left_points, right_points
 
 def smooth_points(points, config=None):
     """Apply a spatial moving average to reduce jitter before interpolation."""
     if len(points) < 3:
         return points
-    
+
     smoothing_radius = LANE_SMOOTHING_RADIUS if config is None else config_value(config, "LANE_SMOOTHING_RADIUS")
     smoothed = []
     for i in range(len(points)):
@@ -280,12 +344,12 @@ def interpolated_x(points, y):
     """Linear interpolation of x for a given y. This avoids spline overshoot wiggle."""
     if len(points) == 1:
         return points[0][0]
-    
+
     if y <= points[0][1]:
         return points[0][0]
     if y >= points[-1][1]:
         return points[-1][0]
-    
+
     for i in range(len(points) - 1):
         if points[i][1] <= y <= points[i + 1][1]:
             p1 = points[i]
@@ -293,11 +357,11 @@ def interpolated_x(points, y):
             break
     else:
         return points[-1][0]
-    
+
     span = p2[1] - p1[1]
     if span <= 0:
         return p1[0]
-    
+
     t = (y - p1[1]) / span
     return int(p1[0] + ((p2[0] - p1[0]) * t))
 
@@ -305,22 +369,22 @@ def draw_lane_model(img, left_points, right_points, draw_overlay, config=None):
     """Draw the lane polygon and curved centerline from sampled marker edges."""
     if len(left_points) < 2 or len(right_points) < 2:
         return []
-    
+
     left_points = smooth_points(left_points, config)
     right_points = smooth_points(right_points, config)
     y_start = max(left_points[0][1], right_points[0][1])
     y_end = min(left_points[-1][1], right_points[-1][1])
     center_points = []
-    
+
     for y in range(y_start, y_end + 1, LANE_MODEL_STEP):
         left_x = interpolated_x(left_points, y)
         right_x = interpolated_x(right_points, y)
-        
+
         if right_x - left_x >= LANE_FILL_MIN_SEPARATION:
             if draw_overlay and config_value(config, "DRAW_LANE_FILL"):
                 img.draw_line((left_x, y, right_x, y), color=LANE_FILL_COLOR)
             center_points.append(((left_x + right_x) // 2, y))
-    
+
     if draw_overlay and config_value(config, "DRAW_LANE_CENTERLINE"):
         for i in range(1, len(center_points)):
             img.draw_line(
@@ -333,7 +397,7 @@ def draw_lane_model(img, left_points, right_points, draw_overlay, config=None):
                 color=LANE_CENTERLINE_COLOR,
                 thickness=LANE_CENTERLINE_THICKNESS,
             )
-    
+
     return center_points
 
 def expected_lane_samples(img, config=None):
@@ -345,7 +409,7 @@ def lane_width_stats(left_points, right_points):
     count = min(len(left_points), len(right_points))
     if count == 0:
         return 0, 0
-    
+
     width_sum = 0
     min_width = 10000
     max_width = 0
@@ -354,7 +418,7 @@ def lane_width_stats(left_points, right_points):
         width_sum += width
         min_width = min(min_width, width)
         max_width = max(max_width, width)
-    
+
     avg_width = width_sum // count
     width_spread = max_width - min_width
     return avg_width, width_spread
@@ -362,7 +426,7 @@ def lane_width_stats(left_points, right_points):
 def nearest_center_point(center_points, target_y):
     if not center_points:
         return None
-    
+
     best = center_points[0]
     best_dist = abs(center_points[0][1] - target_y)
     for point in center_points:
@@ -378,24 +442,24 @@ def estimate_lane_confidence(img, blobs, left_points, right_points, center_point
     sample_score = min(1.0, sample_count / expected)
     blob_score = min(1.0, len(blobs) / 4.0) if blobs else 0.0
     avg_width, width_spread = lane_width_stats(left_points, right_points)
-    
+
     if avg_width > 0:
         width_score = max(0.0, 1.0 - (width_spread / max(avg_width, 1)))
     else:
         width_score = 0.0
-    
+
     if center_points:
         model_score = 1.0
     else:
         model_score = 0.0
-    
+
     confidence = (sample_score * 0.45) + (blob_score * 0.20) + (width_score * 0.25) + (model_score * 0.10)
     return min(1.0, max(0.0, confidence)), avg_width
 
 def estimate_curve(center_points):
     if len(center_points) < 2:
         return 0
-    
+
     near_x = center_points[-1][0]
     far_x = center_points[0][0]
     return near_x - far_x
@@ -461,25 +525,25 @@ def find_lane_center(img, draw_overlay=True, config=None, lookahead_percent=None
         "lane_width": lane_width,
         "lookahead_y": target_y,
     }
-    
+
     if draw_overlay and DRAW_BLOB_DEBUG:
         for blob in sorted_blobs:
-            img.draw_rectangle(blob.rect(), color=(255, 0, 0))
-            img.draw_cross((blob.cx(), blob.cy()), color=(0, 255, 0))
-    
+            img.draw_rectangle(blob_value(blob, "rect"), color=(255, 0, 0))
+            img.draw_cross((blob_value(blob, "cx"), blob_value(blob, "cy")), color=(0, 255, 0))
+
     # Prefer the bottom lane-fill slices for steering because they follow curves.
     if lookahead_point:
         lane_info["lookahead_x"] = lookahead_point[0]
         return lookahead_point[0], sorted_blobs, lane_info
-    
+
     # If we have at least 2 blobs, find center between leftmost and rightmost
     if len(sorted_blobs) >= 2:
         left_blob = sorted_blobs[0]
         right_blob = sorted_blobs[-1]
-        
+
         # Calculate center position
-        lane_center_x = (left_blob.cx() + right_blob.cx()) // 2
-        
+        lane_center_x = (blob_value(left_blob, "cx") + blob_value(right_blob, "cx")) // 2
+
         # Draw center line
         if draw_overlay:
             img.draw_line(
@@ -487,10 +551,10 @@ def find_lane_center(img, draw_overlay=True, config=None, lookahead_percent=None
                 color=LANE_CENTERLINE_COLOR,
                 thickness=LANE_CENTERLINE_THICKNESS,
             )
-        
+
         lane_info["lookahead_x"] = lane_center_x
         return lane_center_x, sorted_blobs, lane_info
-    
+
     lane_info["lookahead_x"] = None
     return None, sorted_blobs, lane_info
 
@@ -498,16 +562,16 @@ def steering_pwm_from_error(error, image_width, pid):
     """Convert steering error to PWM value using PID"""
     # error is in pixels, normalize to -1 to 1 range using the active image width
     normalized_error = error / (image_width / 2.0)
-    
+
     # PID output is steering adjustment in microseconds
     adjustment = pid.update(normalized_error)
-    
+
     # Center steering is 1500us, apply adjustment
     steering_pwm = 1500 + int(adjustment)
-    
+
     # Clamp to valid servo range
     steering_pwm = max(min(steering_pwm, 2000), 1000)
-    
+
     return steering_pwm
 
 def auto_throttle_limit(throttle_in, lane_error, curve, confidence, config):
@@ -516,11 +580,11 @@ def auto_throttle_limit(throttle_in, lane_error, curve, confidence, config):
     throttle_neutral = THROTTLE_NEUTRAL
     if not auto_throttle_enabled or throttle_in <= throttle_neutral:
         return throttle_in
-    
+
     error_ratio = min(1.0, abs(lane_error) / 120.0)
     curve_ratio = min(1.0, abs(curve) / 120.0)
     confidence_penalty = 1.0 - max(0.0, min(1.0, confidence))
-    
+
     auto_max = config_value(config, "AUTO_THROTTLE_MAX")
     auto_min = config_value(config, "AUTO_THROTTLE_MIN")
     max_throttle = auto_max
@@ -528,7 +592,7 @@ def auto_throttle_limit(throttle_in, lane_error, curve, confidence, config):
     max_throttle -= int(config_value(config, "AUTO_THROTTLE_CURVE_SLOWDOWN") * curve_ratio)
     max_throttle -= int(config_value(config, "AUTO_THROTTLE_CONFIDENCE_SLOWDOWN") * confidence_penalty)
     max_throttle = max(auto_min, min(auto_max, max_throttle))
-    
+
     return min(throttle_in, max_throttle)
 
 def make_runtime_config():
@@ -553,7 +617,7 @@ def load_saved_config(config):
 def save_runtime_config(config, allow_write=True):
     if not allow_write:
         return False, "refusing to save while USB is connected"
-    
+
     try:
         with open(CONFIG_TEMP_FILE, "w") as file:
             file.write("# Auto-generated by 2026rover.py calibration page\n")
@@ -565,23 +629,23 @@ def save_runtime_config(config, allow_write=True):
                 file.flush()
             except Exception:
                 pass
-        
+
         try:
             os.sync()
         except Exception:
             pass
-        
+
         try:
             os.remove(CONFIG_FILE)
         except OSError:
             pass
         os.rename(CONFIG_TEMP_FILE, CONFIG_FILE)
-        
+
         try:
             os.sync()
         except Exception:
             pass
-        
+
         config["_saved"] = True
         config["_save_message"] = "saved"
         return True, "saved"
@@ -610,11 +674,8 @@ def config_value(config, name):
     return config.get(name, globals()[name])
 
 def host_connected():
-    """Return whether OpenMV IDE/Protocol V2 has an active host connection."""
-    try:
-        return protocol.is_active()
-    except Exception:
-        return False
+    """Protocol V2 probing is disabled while isolating the N6 WiFi reset."""
+    return False
 
 def bool_text(value):
     return "true" if value else "false"
@@ -627,7 +688,7 @@ def parse_query_string(path):
     parts = path.split(b"?", 1)
     if len(parts) < 2:
         return query
-    
+
     for item in parts[1].split(b"&"):
         if b"=" in item:
             key, value = item.split(b"=", 1)
@@ -642,7 +703,7 @@ def apply_config_query(config, query):
     for name in CONFIG_FIELDS:
         if name not in query:
             continue
-        
+
         current = config[name]
         raw = query[name]
         try:
@@ -662,7 +723,7 @@ class ExponentialSmoothing:
     def __init__(self, alpha=0.3):
         self.alpha = alpha  # Smoothing factor (0-1, lower = more smoothing)
         self.value = None
-    
+
     def update(self, new_value):
         if self.value is None:
             self.value = new_value
@@ -685,6 +746,19 @@ class ServoPWM:
     def deinit(self):
         self.pwm.deinit()
 
+class DisabledServoPWM:
+    """No-op output for independently isolating hardware PWM."""
+    def pulse_width(self, pulse_us):
+        pass
+
+    def deinit(self):
+        pass
+
+def write_steering_pwm(pwm, pulse_us):
+    """Write steering, optionally mirrored around the 1500 us center."""
+    output_us = 3000 - pulse_us if STEERING_OUTPUT_REVERSED else pulse_us
+    pwm.pulse_width(max(1000, min(2000, output_us)))
+
 def wlan_station_id():
     try:
         return network.WLAN.IF_STA
@@ -695,12 +769,15 @@ def start_wifi_stream():
     """Start a simple browser-compatible status server."""
     if not WIFI_STREAM_ENABLED:
         return None
-    
+
     try:
+        debug_checkpoint("wifi: create WLAN")
         wlan = network.WLAN(wlan_station_id())
+        debug_checkpoint("wifi: activate")
         wlan.active(True)
+        debug_checkpoint("wifi: connect call")
         wlan.connect(WIFI_SSID, WIFI_PASSWORD)
-        
+
         connect_start = time.ticks_ms()
         while not wlan.isconnected():
             if time.ticks_diff(time.ticks_ms(), connect_start) > WIFI_CONNECT_TIMEOUT_MS:
@@ -708,15 +785,33 @@ def start_wifi_stream():
                 return None
             print("Connecting to WiFi...")
             time.sleep_ms(500)
-        
-        addr = wlan.ifconfig()[0]
+
+        try:
+            addr = wlan.ipconfig("addr4")[0]
+        except (AttributeError, OSError):
+            addr = wlan.ifconfig()[0]
+        debug_checkpoint("wifi: connected " + str(addr))
+        if not WIFI_HTTP_SERVER_ENABLED:
+            debug_checkpoint("wifi: HTTP server DISABLED for isolation")
+            return {
+                "wlan": wlan,
+                "server": None,
+                "client": None,
+                "last_status": "HTTP server disabled",
+            }
+        debug_checkpoint("wifi: create socket")
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind(("0.0.0.0", WIFI_STREAM_PORT))
         server.listen(1)
         server.settimeout(0)
+        debug_checkpoint("wifi: listening")
         print(f"WiFi status: http://{addr}:{WIFI_STREAM_PORT}/")
         return {
+            # Keep the NIC wrapper alive for as long as lwIP sockets use it.
+            # Letting this local object become collectible after returning can
+            # tear down driver state underneath the active server on the N6.
+            "wlan": wlan,
             "server": server,
             "client": None,
             "last_status": "Starting...",
@@ -735,18 +830,21 @@ def close_stream_client(stream):
 def socket_send_all(sock, data):
     if isinstance(data, str):
         data = data.encode()
-    
+    data = memoryview(data)
+
     try:
         total = len(data)
     except TypeError:
         total = data.size()
-    
+
     sent = 0
     while sent < total:
         chunk = data[sent:min(sent + 1024, total)]
         written = sock.send(chunk)
         if written is None:
             written = len(chunk)
+        if written <= 0:
+            raise OSError("socket closed while sending")
         sent += written
 
 def read_http_path(request):
@@ -765,16 +863,20 @@ def send_status_page(client):
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>OpenMV Rover</title>"
         "<style>body{margin:0;background:#111;color:#eee;font:16px monospace;padding:16px}"
-        "pre{white-space:pre-wrap;line-height:1.45;margin:0}</style>"
+        "img{display:block;width:100%;max-width:640px;height:auto;border:1px solid #555}"
+        "pre{white-space:pre-wrap;line-height:1.45}</style>"
         "<script>"
         "function tick(){"
         "fetch('/status').then(function(r){return r.text()})"
         ".then(function(t){document.getElementById('s').textContent=t});"
         "}"
+        "function frame(){document.getElementById('v').src='/frame.jpg?t='+Date.now();}"
         "window.onload=tick;"
         "setInterval(tick," + str(WIFI_STATUS_INTERVAL_MS) + ");"
+        "setInterval(frame," + str(WIFI_VIDEO_INTERVAL_MS) + ");"
         "</script>"
-        "</head><body><p><a href='/calibrate' style='color:#8cf'>Calibration</a></p><pre id='s'>Connecting...</pre></body></html>"
+        "</head><body><p><a href='/calibrate' style='color:#8cf'>Calibration</a></p>"
+        "<img id='v' src='/frame.jpg' alt='Camera stream'><pre id='s'>Connecting...</pre></body></html>"
     )
     socket_send_all(
         client,
@@ -851,13 +953,34 @@ def send_calibration_page(client, config):
         "Content-Length: " + str(len(page)) + "\r\n\r\n" + page
     )
 
-def update_wifi_status(stream, status, config, usb_connected=False):
-    """Serve the latest status text over WiFi."""
-    if stream is None:
+def send_frame(client, img):
+    """JPEG-encode and return the current processed camera frame."""
+    if img is None:
+        socket_send_all(
+            client,
+            "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n",
+        )
         return
-    
+
+    jpeg = img.to_jpeg(quality=WIFI_JPEG_QUALITY, copy=True)
+    socket_send_all(
+        client,
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: image/jpeg\r\n"
+        "Cache-Control: no-store, no-cache, must-revalidate\r\n"
+        "Connection: close\r\n"
+        "Content-Length: " + str(len(jpeg)) + "\r\n\r\n",
+    )
+    socket_send_all(client, jpeg)
+
+def update_wifi_status(stream, status, config, img=None, usb_connected=False):
+    """Serve the latest status text over WiFi."""
+    if stream is None or stream["server"] is None:
+        return
+
     stream["last_status"] = status
-    
+
+    client = None
     try:
         client, _ = stream["server"].accept()
         client.settimeout(WIFI_CLIENT_TIMEOUT_SEC)
@@ -865,7 +988,7 @@ def update_wifi_status(stream, status, config, usb_connected=False):
             request = client.recv(1024)
         except Exception:
             request = b""
-        
+
         path = read_http_path(request)
         route = path.split(b"?", 1)[0]
         if route == b"/status":
@@ -877,6 +1000,8 @@ def update_wifi_status(stream, status, config, usb_connected=False):
                 "Connection: close\r\n\r\n"
             )
             socket_send_all(client, stream["last_status"])
+        elif route == b"/frame.jpg":
+            send_frame(client, img)
         elif route == b"/calibrate":
             send_calibration_page(client, config)
         elif route == b"/config":
@@ -922,86 +1047,126 @@ def update_wifi_status(stream, status, config, usb_connected=False):
             )
         else:
             send_status_page(client)
-        client.close()
     except OSError:
         return
     except Exception as e:
         print(f"WiFi status error: {e}")
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
 
 def stop_wifi_stream(stream):
     if stream is None:
         return
     close_stream_client(stream)
+    if stream["server"] is not None:
+        try:
+            stream["server"].close()
+        except Exception:
+            pass
     try:
-        stream["server"].close()
+        stream["wlan"].disconnect()
+        stream["wlan"].active(False)
     except Exception:
         pass
 
 def main():
+    debug_checkpoint("main: entered")
     print("Autonomous Lane Following System")
-    print("CH1 (P0): Throttle - Always Manual")
-    print("CH2 (P3): Steering - Auto/Manual")
-    print("CH3 (P9): Mode Switch (<1500=Manual, >1500=Auto)")
+    print("CH1 (P8): Steering - Auto/Manual")
+    print("CH2 (P9): Throttle - Always Manual")
+    print("CH3 (P6/AIN): Mode Switch (<1500=Manual, >1500=Auto)")
     print("-" * 50)
-    
+
     # Initialize LED for heartbeat (1Hz blink)
+    debug_checkpoint("main: LED begin")
     led = machine.LED("LED_RED")
     led_state = False
     last_led_toggle = time.ticks_ms()
     usb_connected = host_connected()
     last_usb_check = time.ticks_ms()
-    
+    debug_checkpoint("main: LED/host ready")
+
     # Initialize camera
+    debug_checkpoint("main: camera construct")
     cam = csi.CSI()
+    debug_checkpoint("main: camera reset")
     cam.reset()
+    debug_checkpoint("main: camera pixformat")
     cam.pixformat(csi.RGB565)
+    debug_checkpoint("main: camera framesize")
     cam.framesize(csi.QVGA)  # 320x240
+    debug_checkpoint("main: camera warmup snapshot begin")
     cam.snapshot(time=2000)
+    debug_checkpoint("main: camera warmup snapshot done")
     cam.auto_gain(False)
     cam.auto_whitebal(False)
-    
+    debug_checkpoint("main: camera ready")
+
     # Initialize PWM readers
-    ch1 = PWMReader(CH1_PIN)  # Throttle
-    ch2 = PWMReader(CH2_PIN)  # Steering
-    ch3 = PWMReader(CH3_PIN)  # Mode
-    
+    debug_checkpoint("main: PWM inputs begin")
+    ch1 = PWMReader(CH1_PIN) if RC_INPUTS_ENABLED else DisabledPWMReader()  # Steering
+    debug_checkpoint("main: PWM input CH1 ready")
+    ch2 = PWMReader(CH2_PIN) if RC_INPUTS_ENABLED else DisabledPWMReader()  # Throttle
+    debug_checkpoint("main: PWM input CH2 ready")
+    ch3 = PWMReader(CH3_PIN) if RC_INPUTS_ENABLED else DisabledPWMReader()
+    debug_checkpoint("main: PWM input CH3 ready")
+    debug_checkpoint("main: RC input IRQs " + ("enabled" if RC_INPUTS_ENABLED else "DISABLED"))
+
     # Initialize smoothing filters for RC inputs
-    ch1_smoother = ExponentialSmoothing(alpha=0.2)
+    ch1_smoother = ExponentialSmoothing(alpha=STEERING_INPUT_SMOOTHING)
     ch2_smoother = ExponentialSmoothing(alpha=0.2)
     ch3_smoother = ExponentialSmoothing(alpha=0.2)
-    
+
     # Initialize firmware 5.0 PWM outputs (50Hz for RC servos).
-    pwm_throttle = ServoPWM(CH1_OUT_PIN)
-    pwm_steering = ServoPWM(CH2_OUT_PIN)
-    
+    debug_checkpoint("main: PWM outputs begin")
+    pwm_throttle = ServoPWM(CH1_OUT_PIN) if SERVO_OUTPUTS_ENABLED else DisabledServoPWM()
+    debug_checkpoint("main: throttle PWM ready")
+    pwm_steering = ServoPWM(CH2_OUT_PIN) if SERVO_OUTPUTS_ENABLED else DisabledServoPWM()
+    debug_checkpoint("main: steering PWM ready")
+    debug_checkpoint("main: servo outputs " + ("enabled" if SERVO_OUTPUTS_ENABLED else "DISABLED"))
+
     # Initialize PID controller for steering
     # PID gains: kp, ki, kd, output_min, output_max (in microseconds)
     steering_pid = PID(kp=300, ki=10, kd=50, output_min=-500, output_max=500)
-    
+
     # Initialize smoothing filters for outputs (more aggressive)
     config = make_runtime_config()
     throttle_smoother = ExponentialSmoothing(alpha=0.15)
-    steering_smoother = ExponentialSmoothing(alpha=0.1)  # Very smooth for auto steering
+    steering_smoother = ExponentialSmoothing(alpha=STEERING_OUTPUT_SMOOTHING)
     lane_center_smoother = ExponentialSmoothing(alpha=config_value(config, "LANE_CENTER_SMOOTHING"))
+    debug_checkpoint("main: WiFi begin")
     wifi_stream = start_wifi_stream()
-    
-    # Give interrupts time to stabilize
-    time.sleep_ms(100)
+    debug_checkpoint("main: WiFi startup returned")
+
+    # Do not sleep here. On the N6, the WiFi driver and RC edge readers are all
+    # interrupt-driven; the old post-connect sleep was the last observed point
+    # before a native reset and provides no required settling time.
+    debug_checkpoint("main: loop state begin")
     fps = 0.0
     frame_count = 0
     min_fps = 999.0
     max_fps = 0.0
+    debug_checkpoint("main: counters ready")
     lane_lost_count = 0
     lane_was_detected = False
     auto_was_enabled = False
     last_lane_seen_ms = time.ticks_ms()
     last_auto_steering = 1500
-    
+    last_rc_serial_ms = time.ticks_ms()
+    debug_checkpoint("main: entering loop")
+
     try:
         while True:
             frame_count += 1
             loop_start = time.ticks_ms()
-        
+            trace_frame = frame_count <= DEBUG_FIRST_FRAMES
+            if trace_frame:
+                debug_checkpoint("loop: begin", frame_count)
+
             # Toggle LED every 500ms (1Hz pulse)
             if time.ticks_diff(loop_start, last_led_toggle) >= 500:
                 led_state = not led_state
@@ -1010,30 +1175,54 @@ def main():
                 else:
                     led.off()
                 last_led_toggle = loop_start
-            
+
             if time.ticks_diff(loop_start, last_usb_check) >= USB_CHECK_INTERVAL_MS:
                 usb_connected = host_connected()
                 last_usb_check = loop_start
-            
+
             overlay_enabled = usb_connected or not config_value(config, "DRAW_OVERLAYS_ONLY_WHEN_USB_CONNECTED")
-            
+
             # Capture image
+            if trace_frame:
+                debug_checkpoint("loop: snapshot begin", frame_count)
             img = cam.snapshot()
+            if trace_frame:
+                debug_checkpoint("loop: snapshot done", frame_count)
             img = apply_top_down_view(img, config)
-            
+            if trace_frame:
+                debug_checkpoint("loop: top-down done", frame_count)
+
             # Read and smooth RC inputs
-            throttle_raw = ch1.get_pulse_width()
-            steering_raw = ch2.get_pulse_width()
+            steering_raw = ch1.get_pulse_width()
+            throttle_raw = ch2.get_pulse_width()
             mode_raw = ch3.get_pulse_width()
-            
+
             # Apply smoothing to inputs
-            throttle_in = ch1_smoother.update(throttle_raw) if throttle_raw > 0 else 0
-            steering_in = ch2_smoother.update(steering_raw) if steering_raw > 0 else 0
+            steering_in = ch1_smoother.update(steering_raw) if steering_raw > 0 else 0
+            throttle_in = ch2_smoother.update(throttle_raw) if throttle_raw > 0 else 0
             mode_in = ch3_smoother.update(mode_raw) if mode_raw > 0 else 0
-            
+
+            if (
+                RC_SERIAL_MONITOR_ENABLED
+                and time.ticks_diff(loop_start, last_rc_serial_ms) >= RC_SERIAL_MONITOR_INTERVAL_MS
+            ):
+                print(
+                    "RC",
+                    "CH1 steering raw/smooth:", steering_raw, steering_in,
+                    "CH2 throttle raw/smooth:", throttle_raw, throttle_in,
+                    "CH3 mode raw/smooth:", mode_raw, mode_in,
+                )
+                print(
+                    "RCDBG pin/edges/last_us",
+                    "CH1:", ch1.diagnostics(),
+                    "CH2:", ch2.diagnostics(),
+                    "CH3:", ch3.diagnostics(),
+                )
+                last_rc_serial_ms = loop_start
+
             # Determine mode
             auto_mode = mode_in > MODE_THRESHOLD if mode_in > 0 else False
-            
+
             # Variables to track actual outputs
             throttle_out = throttle_in
             steering_out = steering_in
@@ -1045,6 +1234,8 @@ def main():
                 config=config,
                 lookahead_percent=lookahead_percent,
             )
+            if trace_frame:
+                debug_checkpoint("loop: lane detection done", frame_count)
             image_center = img.width() // 2
             lane_error = 0
             heading_error = 0
@@ -1060,14 +1251,14 @@ def main():
             elif lane_was_detected:
                 lane_lost_count += 1
                 lane_was_detected = False
-            
+
             lane_missing_ms = time.ticks_diff(loop_start, last_lane_seen_ms)
             lane_confidence = lane_info.get("confidence", 0.0)
             lane_curve = lane_info.get("curve", 0)
             lane_width = lane_info.get("lane_width", 0)
             lane_samples = lane_info.get("sample_count", 0)
             lane_expected_samples = lane_info.get("expected_samples", 0)
-            
+
             # Throttle is always passthrough (with smoothing)
             if throttle_in > 0:
                 throttle_out = throttle_smoother.update(throttle_in)
@@ -1075,7 +1266,7 @@ def main():
                     pwm_throttle.pulse_width(throttle_out)
             else:
                 throttle_out = 0
-            
+
             # Steering logic
             if auto_mode:
                 if not auto_was_enabled:
@@ -1086,29 +1277,29 @@ def main():
                         # Get steering PWM from PID controller
                         steering_pwm = steering_pwm_from_error(lane_error, img.width(), pid=steering_pid)
                         steering_out = steering_smoother.update(steering_pwm)
-                        pwm_steering.pulse_width(steering_out)
+                        write_steering_pwm(pwm_steering, steering_out)
                         last_auto_steering = steering_out
-                        
+
                         if overlay_enabled:
                             img.draw_string((10, 10), f"AUTO - Error: {lane_error}px", color=(255, 255, 0))
                             img.draw_string((10, 25), f"Steer: {steering_out}us", color=(255, 255, 0))
                     elif lane_missing_ms < config_value(config, "LANE_HOLD_LAST_MS"):
                         steering_out = last_auto_steering
-                        pwm_steering.pulse_width(steering_out)
+                        write_steering_pwm(pwm_steering, steering_out)
                         if overlay_enabled:
                             img.draw_string((10, 10), "AUTO - HOLD LAST", color=(255, 128, 0))
                     else:
                         # No lanes detected - slow down and then center steering
                         steering_pid.reset()
                         steering_out = steering_smoother.update(1500)
-                        pwm_steering.pulse_width(steering_out)
+                        write_steering_pwm(pwm_steering, steering_out)
                         if overlay_enabled:
                             img.draw_string((10, 10), "AUTO - NO LANES!", color=(255, 0, 0))
                 except Exception as e:
                     print(f"ERROR in auto mode: {e}")
                     # Failsafe - center steering
                     steering_out = 1500
-                    pwm_steering.pulse_width(steering_out)
+                    write_steering_pwm(pwm_steering, steering_out)
                     if overlay_enabled:
                         img.draw_string((10, 10), "AUTO - ERROR!", color=(255, 0, 0))
             else:
@@ -1118,33 +1309,33 @@ def main():
                 # Manual mode - passthrough RC steering
                 if steering_in > 0:
                     steering_out = steering_smoother.update(steering_in)
-                    pwm_steering.pulse_width(steering_out)
+                    write_steering_pwm(pwm_steering, steering_out)
                 if overlay_enabled:
                     img.draw_string((10, 10), "MANUAL MODE", color=(0, 255, 0))
-            
+
             if auto_mode:
                 if lane_detected:
                     throttle_out = auto_throttle_limit(throttle_out, lane_error, lane_curve, lane_confidence, config)
                 elif lane_missing_ms >= config_value(config, "LANE_HOLD_LAST_MS"):
                     throttle_out = min(throttle_out, THROTTLE_NEUTRAL)
-                
+
                 if lane_missing_ms >= config_value(config, "LANE_CENTER_FAILSAFE_MS"):
                     throttle_out = min(throttle_out, THROTTLE_NEUTRAL)
-                
+
                 if throttle_out > 0:
                     pwm_throttle.pulse_width(throttle_out)
-            
+
             # Calculate loop time for debugging
             loop_time = time.ticks_diff(time.ticks_ms(), loop_start)
             if loop_time > 0:
                 fps = 1000.0 / loop_time
                 min_fps = min(min_fps, fps)
                 max_fps = max(max_fps, fps)
-            
+
             largest_blob_area = 0
             for blob in blobs:
-                largest_blob_area = max(largest_blob_area, blob.area())
-            
+                largest_blob_area = max(largest_blob_area, blob_value(blob, "area"))
+
             mode_str = "auto" if auto_mode else "manual"
             lane_center_text = str(lane_center_x) if lane_detected else "none"
             status_text = (
@@ -1164,14 +1355,21 @@ def main():
                 f"TopDown:{config_value(config, 'USE_TOP_DOWN_VIEW')}  ROI Top:{config_value(config, 'LANE_ROI_TOP_PERCENT')}%  Fill:{config_value(config, 'DRAW_LANE_FILL')}\n"
                 f"USB Connected:{usb_connected}  Overlay Drawing:{overlay_enabled}\n"
                 f"Config Saved:{config.get('_saved', False)}\n"
-                "WiFi video: disabled; telemetry only"
+                "WiFi video: enabled"
             )
-            
+
             if overlay_enabled:
                 img.draw_string((10, 40), f"Thr: {throttle_in} Str: {steering_in}", color=(255, 255, 255))
                 img.draw_string((10, 55), f"Mode: {mode_in}", color=(255, 255, 255))
-            update_wifi_status(wifi_stream, status_text, config, usb_connected=usb_connected)
-            
+            if trace_frame:
+                debug_checkpoint("loop: web poll begin", frame_count)
+            update_wifi_status(wifi_stream, status_text, config, img=img, usb_connected=usb_connected)
+            if trace_frame:
+                debug_checkpoint("loop: web poll done", frame_count)
+
+            if frame_count % DEBUG_FRAME_INTERVAL == 0:
+                debug_checkpoint("loop: alive", frame_count)
+
             if usb_connected and frame_count % SERIAL_PRINT_INTERVAL == 0:
                 print(status_text.replace("\n", " | "))
     finally:
@@ -1183,4 +1381,13 @@ def main():
         stop_wifi_stream(wifi_stream)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException as error:
+        print("FATAL: unhandled exception:", repr(error))
+        try:
+            sys.print_exception(error)
+        except Exception:
+            pass
+        debug_checkpoint("fatal: script stopped")
+        raise
